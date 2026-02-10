@@ -16,7 +16,7 @@ import pandas as pd
 from tqdm import tqdm
 dir_crt = os.getcwd()
 sys.path.append(os.path.join(dir_crt, 'util'))
-import util_pyVHR
+from util import util_pyVHR
 
 
 def main_gen_gtHR(dir_dataset):
@@ -47,14 +47,14 @@ def main_gen_gtHR(dir_dataset):
         # Loop over all conditions.
         for num_condition in list_conition:
             # Ground truth BVP signal.
-            dir_bvp = os.path.join(dir_dataset, 's'+str(num_attendant), 'bvp_s'+str(num_attendant)+'_T'+str(num_condition)+'.csv')
-            df_bvp = pd.read_csv(dir_bvp, index_col=None)
+            dir_bvp = os.path.join(dir_dataset)
+            df_bvp = pd.read_csv(r"C:\Users\dowellm2\rPPG\optimal_roi_rppg-master\main\data\custom\Yuao1m\1\20251202_155614\Yuao-1m-1min-finger-ground-truth-data-1.csv", index_col=None)
             sig_bvp = df_bvp.values
             # Calculate frames per second of the BVP signal.
-            dir_video = os.path.join(dir_dataset, 's'+str(num_attendant), 'vid_s'+str(num_attendant)+'_T'+str(num_condition)+'.avi')
-            cap = cv2.VideoCapture(dir_video)
-            duration = cap.get(7)/cap.get(5)   # Video duration (sec).
-            fps = len(sig_bvp)/duration
+            #dir_video = os.path.join(dir_dataset, 's'+str(num_attendant), 'vid_s'+str(num_attendant)+'_T'+str(num_condition)+'.avi')
+            #cap = cv2.VideoCapture(dir_video)
+            duration = 60   # Video duration (sec).
+            fps = 50
             # Calculate window length and stride length.
             len_window_frame = int(len_window * fps)
             stride_window_frame = int(stride_window * fps)
@@ -66,6 +66,7 @@ def main_gen_gtHR(dir_dataset):
                 # Signal slicing.
                 sig_bvp_slice = sig_bvp[idx_crt:(idx_crt+len_window_frame-1)]
                 # Welch's method of filtering.
+                print("shape of sig_bvp_slice", sig_bvp_slice.shape())
                 Pfreqs, Power = util_pyVHR.Welch(np.reshape(sig_bvp_slice, newshape=[1, len(sig_bvp_slice)]), fps, minHz, maxHz, nFFT)
                 Pmax = np.argmax(Power, axis=1)  # Power max.
                 sig_bpm[int(0.5*(2*idx_crt+len_window_frame-1))] = Pfreqs[Pmax.squeeze()]
@@ -83,6 +84,8 @@ def main_gen_gtHR(dir_dataset):
 if __name__ == "__main__":
     # Generate ground truth HR for UBFC-Phys.
     dir_crt = os.getcwd()
-    dir_option = os.path.join(dir_crt, 'config', 'options.yaml')
-    dir_dataset = yaml.safe_load(open(dir_option))['UBFC-Phys']['dir_dataset']
+    #dir_option = os.path.join(dir_crt, 'config', 'options.yaml')
+    #dir_dataset = yaml.safe_load(open(dir_option))['UBFC-Phys']['dir_dataset']
+    dir_option = r"C:\Users\dowellm2\rPPG\optimal_roi_rppg-master\main\data\custom\Yuao1m\1\20251202_155614\Yuao-1m-1min-finger-ground-truth-data-1.csv"
+    dir_dataset = yaml.safe_load(open(dir_option))
     main_gen_gtHR(dir_dataset=dir_dataset)

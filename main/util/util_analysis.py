@@ -114,8 +114,30 @@ class GroundTruth():
         gtTrace: Ground truth PPG waveform data in numpy array. Size = [num_frames].
         gtHR: Ground truth HR data in numpy array. Size = [num_frames].
         """
+        if self.name_dataset == 'custom':
+            dir_crt = r"C:\Users\dowellm2\rPPG\optimal_roi_rppg-master\main\data\custom\Yuao1m\1\20251202_155614\Yuao-1m-1min-finger-ground-truth-data-1.csv"
+            df_GT = pd.read_csv(dir_crt, header=0)
 
-        if self.name_dataset == 'UBFC-rPPG':  # UBFC-rPPG dataset.
+            # Inspect columns once to confirm names
+            print("Columns:", list(df_GT.columns))
+
+            # Adjust these names to match your file
+            TIME_COL_NAME = "PC_Timestamp_ms"  # or "timestamp", etc.
+            TRACE_COL_NAME = "Signal_Value"  # the PPG amplitude column
+            HR_COL_NAME = "HR"  # optional; may or may not exist
+
+            # Convert to numeric safely
+            gtTime = pd.to_numeric(df_GT[TIME_COL_NAME], errors='coerce').to_numpy()
+            gtTrace = pd.to_numeric(df_GT[TRACE_COL_NAME], errors='coerce').to_numpy(dtype=float)
+
+            gtHR = None
+            if HR_COL_NAME in df_GT.columns:
+                gtHRcol = pd.to_numeric(df_GT[HR_COL_NAME], errors='coerce').to_numpy(dtype=float)
+                # Treat zeros as missing if your device uses 0 to mean "no reading"
+                gtHR = np.where(gtHRcol == 0, np.nan, gtHRcol)
+
+
+        elif self.name_dataset == '!UBFC-rPPG':  # UBFC-rPPG dataset.
             
             if specification[0] == 'simple':  # Simple. 
                 dir_crt = os.path.join(self.dir_dataset, 'DATASET_1', str(specification[1])+'-gt', 'gtdump.xmp')
@@ -132,7 +154,7 @@ class GroundTruth():
                 gtHR = npy_GT[1, :]
 
 
-        elif self.name_dataset == 'UBFC-Phys':  # UBFC-Phys dataset.
+        elif self.name_dataset == '!UBFC-Phys':  # UBFC-Phys dataset.
             # Groundtruth BVP trace.
             dir_bvp = os.path.join(self.dir_dataset, 's'+str(specification[0]), 'bvp_s'+str(specification[0])+'_T'+str(specification[1])+'.csv')
             gtTrace = np.loadtxt(dir_bvp)
@@ -149,7 +171,7 @@ class GroundTruth():
             gtHR = np.loadtxt(dir_bpm)
 
 
-        elif self.name_dataset == 'LGI-PPGI':  # LGI-PPGI dataset.
+        elif self.name_dataset == '!LGI-PPGI':  # LGI-PPGI dataset.
             dir_vid = os.path.join(self.dir_dataset, str(specification[0]), specification[0]+'_'+specification[1], 'cv_camera_sensor_stream_handler.avi')
             dir_xml = os.path.join(self.dir_dataset, specification[0], specification[0]+'_'+specification[1], 'cms50_stream_handler.xml')
             dom = minidom.parse(dir_xml)
@@ -177,7 +199,7 @@ class GroundTruth():
             gtTrace = np.array(gtTrace)
 
         
-        elif self.name_dataset == 'BUAA-MIHR':  # BUAA-MIHR dataset.
+        elif self.name_dataset == '!BUAA-MIHR':  # BUAA-MIHR dataset.
             dir_crt = os.path.join(self.dir_dataset, 'Sub '+str(specification[0]).zfill(2), specification[1])
             # PPG trace wave.
             gtTrace = np.loadtxt(os.path.join(dir_crt, specification[1].replace(' ', '')+'_'+specification[2]+'_wave.csv'))
@@ -358,6 +380,7 @@ class FaceDetector():
         return img_draw
 
 def frames_to_sig(frame_folder, Params):
+    counter = 0
     # Create the face detection object.
     Detector_crt = FaceDetector(Params=Params)
     # Create the dataframe containing the RGB signals and other necessary data.
@@ -367,10 +390,18 @@ def frames_to_sig(frame_folder, Params):
     # grabbing frames instead of .avi video
     frame_files = sorted(os.listdir(frame_folder))
     for f in frame_files:
+        counter += 1
+        if counter > 600:
+            continue
         img_frame = cv2.imread(os.path.join(frame_folder, f))
+        if img_frame is None:
+            print("Skipping unreadable file:")
+            continue
         # Detect facial landmark keypoints. The locations are normalized into [0, 1].
         loc_landmark = Detector_crt.extract_landmark(img=img_frame)  # Size = [468, 3]
         # Extract RGB signal.
+
+        print(counter, "frames out of 3000")
         sig_rgb = Detector_crt.extract_RGB(img=img_frame, loc_landmark=loc_landmark)  # Size = [num_roi, 3].
         # Loop over all ROIs and save the RGB data.
         df_rgb_tmp = pd.DataFrame(columns=['frame', 'time', 'ROI', 'R', 'G', 'B'],
@@ -547,11 +578,23 @@ def rppg_hr_pipe(sig_rgb, method, Params):
     sig_bvp: Blood volume pulse (BVP) signal of different ROI without windowing. Size=[num_frames, num_ROI].
     sig_bpm: Beats per minute (BPM) signal of different ROI. Size=[num_frames, num_ROI].
     """
-
+    print(sig_rgb)
+    print(len(sig_rgb))
+    print("number of frames:", sig_rgb.shape[0])
+    print("")
     # RGB signal -> windowed RGB signal.
     sig_rgb_win, timeES = sig_to_windowed(sig_rgb=sig_rgb, Params=Params)
+    print("Sig_rgb_win:",sig_rgb_win)
+    print("Params window size:", Params.len_window)
+    print("Params window stride:", Params.stride_window)
+    print("Params ROI number", Params.list_roi_num)
+    print("Params ROI name", Params.list_roi_name)
+    print("Params directory", Params.dir_dataset)
+    print("Params minimum tracking condition", Params.minTrackingCon)
+    print("Params minimum detection condition", Params.minDetectionCon)
     # Windowed RGB signal -> windowed raw bvp signal.
     sig_bvp_win = sig_windowed_to_bvp(sig_rgb_win=sig_rgb_win, method=method, Params=Params)
+
     # Windowed raw bvp signal -> windowed filtered bvp signal.
     sig_bvp_win_filtered = util_pyVHR.apply_filter(sig_bvp_win, util_pyVHR.BPfilter, params={'order':6, 'minHz':0.65, 'maxHz':4.0, 'fps':Params.fps})
     # Fill nan values.
@@ -564,6 +607,7 @@ def rppg_hr_pipe(sig_rgb, method, Params):
         else:
             sig_bvp_win_filtered[i_window] = sig_bvp_win_filtered[i_window-1]
     # De-windowing bvp signal.
+    print(len(sig_bvp_win_filtered))
     for i in range(len(sig_bvp_win_filtered)):
         if i == 0:
             sig_bvp = (sig_bvp_win_filtered[i])[:, :round(Params.fps*Params.stride_window)]

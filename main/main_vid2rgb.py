@@ -36,25 +36,26 @@ def main_vid2rgb(name_dataset):
 
     if name_dataset == 'custom':
         # Just one attendant in this case
+        print(dir_crt, name_dataset)
         list_attendant = [1]
         # Create a log to save num of nan.
         df_nan = pd.DataFrame(columns=['attendant', 'num_nan'])
         # Video directory.
-        frame_folder = os.path.join(Params.dir_dataset, 'custom')
+        frame_folder = os.path.join(Params.dir_dataset, '1/Yuao-1m-1min-video-recording-data-1')
         # Video fps.
         Params.fps = 50
         # RGB signal extraction.
         df_rgb, num_nan = util_analysis.frames_to_sig(frame_folder=frame_folder, Params=Params)
         # Save RGB signals.
+
         dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'rgb', '.csv')
         df_rgb.to_csv(dir_save_data, index=False)
         # Save nan events.
         df_nan.loc[len(df_nan)] = [1, num_nan]
         dir_save_nan = os.path.join(dir_crt, 'data', name_dataset, 'rgb', 'nan_event.csv')
         df_nan.to_csv(dir_save_nan, index=False)
-        return
     # Video -> RGB signal.
-    elif name_dataset == 'UBFC-rPPG':
+    elif name_dataset == '!UBFC-rPPG':
         # Sequnce num of attendants.
         list_attendant = [1] + list(range(3, 6)) + list(range(8, 19)) + [20] + list(range(22, 27)) + list(range(30, 50))
         # Create a log to save num of nan.
@@ -76,7 +77,7 @@ def main_vid2rgb(name_dataset):
             df_nan.to_csv(dir_save_nan, index=False)
 
 
-    elif name_dataset == 'UBFC-Phys':
+    elif name_dataset == '!UBFC-Phys':
         # Name of attendants.
         list_attendant = list(range(1, 57))
         # Condition types.
@@ -101,7 +102,7 @@ def main_vid2rgb(name_dataset):
                 df_nan.to_csv(dir_save_nan, index=False)
 
 
-    elif name_dataset == 'LGI-PPGI':
+    elif name_dataset == '!LGI-PPGI':
         # Name of attendants.
         list_attendant = ['alex', 'angelo', 'cpi', 'david', 'felix', 'harun']
         # Motion types.
@@ -126,7 +127,7 @@ def main_vid2rgb(name_dataset):
                 df_nan.to_csv(dir_save_nan, index=False)
  
 
-    elif name_dataset == 'BUAA-MIHR':
+    elif name_dataset == '!BUAA-MIHR':
         # Sequnce num of attendants.
         list_attendant = list(range(1, 14))
         # Illumination levels.
@@ -156,7 +157,7 @@ def main_vid2rgb(name_dataset):
 
 if __name__ == "__main__":
     # Available datasets.
-    list_dataset = ['UBFC-rPPG', 'UBFC-Phys', 'LGI-PPGI', 'BUAA-MIHR']  # ['UBFC-rPPG', 'UBFC-Phys', 'LGI-PPGI', 'BUAA-MIHR'].
+    list_dataset = ['custom','UBFC-rPPG', 'UBFC-Phys', 'LGI-PPGI', 'BUAA-MIHR']  # ['UBFC-rPPG', 'UBFC-Phys', 'LGI-PPGI', 'BUAA-MIHR'].
     # Extract RGB signal.
     for name_dataset in list_dataset:
         main_vid2rgb(name_dataset=name_dataset)

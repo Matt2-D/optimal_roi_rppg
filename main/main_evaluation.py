@@ -11,10 +11,10 @@ import numpy as np
 import pandas as pd
 dir_crt = os.getcwd()
 sys.path.append(os.path.join(dir_crt, 'util'))
-import util_analysis
+from util import util_analysis
 
 
-def main_eval(name_dataset='UBFC-rPPG', algorithm='CHROM'):
+def main_eval(name_dataset='custom', algorithm='CHROM'):
     """Evaluation pipeline for a given dataset using a given algorithm.
     Parameters
     ----------
@@ -34,7 +34,35 @@ def main_eval(name_dataset='UBFC-rPPG', algorithm='CHROM'):
     # Groundtruth class initialization.
     GT = util_analysis.GroundTruth(dir_dataset=Params.dir_dataset, name_dataset=name_dataset)
     # Structures for different datasets.
-    if name_dataset == 'UBFC-rPPG':  # UBFC-rPPG dataset.
+    if name_dataset == "custom": #custom dataset
+        list_attendant = [1]
+        # Dataframe initialization.
+        df_eval = pd.DataFrame(columns=['attendant', 'ROI', 'DTW', 'PCC', 'CCC', 'RMSE', 'MAE', 'MAPE'])
+        # Loop over all data points.
+        num_attendant = 1
+        print([name_dataset, algorithm, num_attendant])
+        # Load BVP and HR signals.
+        dir_hr = os.path.join(dir_crt, 'data', name_dataset, 'hr', str(num_attendant) + '_' + algorithm + '.csv')
+        df_hr = pd.read_csv(dir_hr, index_col=0)
+        # Load ground truth.
+        gtTime, gtTrace, gtHR = GT.get_GT(specification=['realistic', num_attendant],
+                                              num_frame_interp=int(len(df_hr) / len(Params.list_roi_name)),
+                                              slice=[0, 1])
+        # Initialization of BVP and BPM arrays.
+        sig_bvp = np.zeros(shape=[int(len(df_hr) / len(Params.list_roi_name)), len(Params.list_roi_name)])
+        sig_bpm = np.zeros(shape=[int(len(df_hr) / len(Params.list_roi_name)), len(Params.list_roi_name)])
+        for i_roi in range(len(Params.list_roi_name)):
+            sig_bvp[:, i_roi] = df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BVP']
+            sig_bpm[:, i_roi] = df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BPM']
+        # Metrics calculation.
+        df_metric = util_analysis.eval_pipe(sig_bvp, sig_bpm, gtTime, gtTrace, gtHR, Params)
+        df_eval = pd.concat([df_eval, df_metric])
+        df_eval.reset_index(drop=True, inplace=True)
+        df_eval.loc[len(df_eval) - len(Params.list_roi_name):, 'attendant'] = num_attendant
+        # Dataframe saving.
+        df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_' + algorithm + '.csv'))
+
+    elif name_dataset == '!UBFC-rPPG':  # UBFC-rPPG dataset.
         list_attendant = [1] + list(range(3, 6)) + list(range(8, 19)) + [20] + \
                          list(range(22, 27)) + list(range(30, 50))  # Attendant sequence num.
         # Dataframe initialization.
@@ -64,7 +92,7 @@ def main_eval(name_dataset='UBFC-rPPG', algorithm='CHROM'):
             df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_'+algorithm+'.csv'))
 
 
-    elif name_dataset == 'UBFC-Phys':   # UBFC-Phys dataset.
+    elif name_dataset == '!UBFC-Phys':   # UBFC-Phys dataset.
         # Name of attendants.
         list_attendant = list(range(1, 57))
         # Condition types.
@@ -98,7 +126,7 @@ def main_eval(name_dataset='UBFC-rPPG', algorithm='CHROM'):
                 df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_'+algorithm+'.csv'))
 
 
-    elif name_dataset == 'LGI-PPGI':   # LGI-PPGI dataset.
+    elif name_dataset == '!LGI-PPGI':   # LGI-PPGI dataset.
         list_attendant = ['angelo', 'david', 'alex', 'cpi', 'felix', 'harun']  # Attendant name.
         list_motion = ['resting', 'gym', 'rotation', 'talk']  # Motion type.
         # Dataframe initialization.
@@ -130,7 +158,7 @@ def main_eval(name_dataset='UBFC-rPPG', algorithm='CHROM'):
                 df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_'+algorithm+'.csv'))
         
 
-    elif name_dataset == 'BUAA-MIHR':   # BUAA-MIHR dataset.
+    elif name_dataset == '!BUAA-MIHR':   # BUAA-MIHR dataset.
         # Sequnce num of attendants.
         list_attendant = list(range(4, 5))
         # Illumination levels.
@@ -170,7 +198,7 @@ def main_eval(name_dataset='UBFC-rPPG', algorithm='CHROM'):
 
 
 if __name__ == "__main__":
-    list_dataset = ['UBFC-rPPG', 'UBFC-Phys', 'LGI-PPGI', 'BUAA-MIHR']  # ['UBFC-rPPG', 'UBFC-Phys', 'LGI-PPGI', 'BUAA-MIHR'].
+    list_dataset = ['custom']  # ['UBFC-rPPG', 'UBFC-Phys', 'LGI-PPGI', 'BUAA-MIHR'].
     list_algorithm = ['CHROM', 'LGI', 'OMIT', 'POS']  # ['CHROM', 'LGI', 'OMIT', 'POS'].
     # Loop over all selected rPPG datasets.
     for name_dataset in list_dataset:
