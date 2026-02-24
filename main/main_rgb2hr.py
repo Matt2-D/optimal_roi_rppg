@@ -72,7 +72,7 @@ def main_rgb2hr(name_dataset, algorithm):
                 df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BPM'] = sig_bpm[:, i_roi]  # BPM signal.
             # Data saving.
             dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'hr',
-                                         str(num_attendant) + '_' + algorithm + '.csv')
+                                         str(num_attendant) + '_' + algorithm + '1.csv')
             df_hr.to_csv(dir_save_data, index=False)
 
     if name_dataset == '!UBFC-rPPG':
@@ -81,7 +81,7 @@ def main_rgb2hr(name_dataset, algorithm):
         # Loop over all attendants.
         for num_attendant in tqdm(list_attendant):
             # Parse the RGB signal from the RGB dataframe. Size = [num_frames, num_ROI, rgb_channels(3)].
-            dir_sig_rgb = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(num_attendant)+'.csv')
+            dir_sig_rgb = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(num_attendant)+'1.csv')
             df_rgb = pd.read_csv(dir_sig_rgb)
             # RGB signal initialization.
             sig_rgb = np.zeros([df_rgb['frame'].max(), len(np.unique(df_rgb['ROI'].values)), 3])
@@ -105,7 +105,7 @@ def main_rgb2hr(name_dataset, algorithm):
                 df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BVP'] = sig_bvp[:, i_roi]  # BVP signal.
                 df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BPM'] = sig_bpm[:, i_roi]  # BPM signal.
             # Data saving.
-            dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'hr', str(num_attendant)+'_'+algorithm+'.csv')
+            dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'hr', str(num_attendant)+'_'+algorithm+'1.csv')
             df_hr.to_csv(dir_save_data, index=False)
 
     elif name_dataset == '!UBFC-Phys':
@@ -116,7 +116,7 @@ def main_rgb2hr(name_dataset, algorithm):
         for num_attendant in tqdm(list_attendant):
             for condition in list_condition:
                 # Parse the RGB signal from the RGB dataframe. Size = [num_frames, num_ROI, rgb_channels(3)].
-                dir_sig_rgb = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(num_attendant) + '_' + str(condition) + '.csv')
+                dir_sig_rgb = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(num_attendant) + '_' + str(condition) + '1.csv')
                 df_rgb = pd.read_csv(dir_sig_rgb)
                 # RGB signal initialization.
                 sig_rgb = np.zeros([df_rgb['frame'].max(), len(np.unique(df_rgb['ROI'].values)), 3])
@@ -141,7 +141,7 @@ def main_rgb2hr(name_dataset, algorithm):
                     df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BPM'] = sig_bpm[:, i_roi]  # BPM signal.
                 # Data saving.
                 dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'hr', str(num_attendant) + '_' + \
-                                             str(condition) + '_' + algorithm + '.csv')
+                                             str(condition) + '_' + algorithm + '1.csv')
                 df_hr.to_csv(dir_save_data, index=False)
 
     elif name_dataset == '!LGI-PPGI':
@@ -152,7 +152,7 @@ def main_rgb2hr(name_dataset, algorithm):
         for attendant in tqdm(list_attendant):
             for motion in list_motion:
                 # Parse the RGB signal from the RGB dataframe. Size = [num_frames, num_ROI, rgb_channels(3)].
-                dir_sig_rgb = os.path.join(dir_crt, 'data', name_dataset, 'rgb', attendant+'_'+motion+'.csv')
+                dir_sig_rgb = os.path.join(dir_crt, 'data', name_dataset, 'rgb', attendant+'_'+motion+'1.csv')
                 df_rgb = pd.read_csv(dir_sig_rgb)
                 # RGB signal initialization.
                 sig_rgb = np.zeros([df_rgb['frame'].max(), len(np.unique(df_rgb['ROI'].values)), 3])
@@ -176,7 +176,7 @@ def main_rgb2hr(name_dataset, algorithm):
                     df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BVP'] = sig_bvp[:, i_roi]  # BVP signal.
                     df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BPM'] = sig_bpm[:, i_roi]  # BPM signal.
                 # Data saving.
-                dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'hr', attendant+'_'+motion+'_'+algorithm+'.csv')
+                dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'hr', attendant+'_'+motion+'_'+algorithm+'1.csv')
                 df_hr.to_csv(dir_save_data, index=False)
 
     elif name_dataset == '!BUAA-MIHR':
@@ -191,7 +191,7 @@ def main_rgb2hr(name_dataset, algorithm):
             # Loop over all illumination levels.
             for lux in list_lux:
                 # Parse the RGB signal from the RGB dataframe. Size = [num_frames, num_ROI, rgb_channels(3)].
-                dir_sig_rgb = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(num_attendant).zfill(2)+'_'+lux.replace(' ', '')+'.csv')
+                dir_sig_rgb = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(num_attendant).zfill(2)+'_'+lux.replace(' ', '')+'1.csv')
                 df_rgb = pd.read_csv(dir_sig_rgb, index_col=None)
                 # RGB signal initialization.
                 sig_rgb = np.zeros([df_rgb['frame'].max(), len(np.unique(df_rgb['ROI'].values)), 3])
@@ -217,7 +217,7 @@ def main_rgb2hr(name_dataset, algorithm):
                     df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BPM'] = sig_bpm[:, i_roi]  # BPM signal.
                 # Data saving.
                 dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'hr', str(num_attendant).zfill(2) + \
-                                             '_' + str(lux).replace(' ', '') + '_' + algorithm+'.csv')
+                                             '_' + str(lux).replace(' ', '') + '_' + algorithm+'1.csv')
                 df_hr.to_csv(dir_save_data, index=False)
 
 

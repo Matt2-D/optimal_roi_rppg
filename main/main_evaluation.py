@@ -42,12 +42,13 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
         num_attendant = 1
         print([name_dataset, algorithm, num_attendant])
         # Load BVP and HR signals.
-        dir_hr = os.path.join(dir_crt, 'data', name_dataset, 'hr', str(num_attendant) + '_' + algorithm + '.csv')
+        dir_hr = os.path.join(dir_crt, 'data', name_dataset, 'hr', str(num_attendant) + '_' + algorithm + '1.csv')
         df_hr = pd.read_csv(dir_hr, index_col=0)
         # Load ground truth.
         gtTime, gtTrace, gtHR = GT.get_GT(specification=['realistic', num_attendant],
                                               num_frame_interp=int(len(df_hr) / len(Params.list_roi_name)),
                                               slice=[0, 1])
+        print("gtTime:",gtTime,"gtTrace:",gtTrace,"gtHR:",gtHR)
         # Initialization of BVP and BPM arrays.
         sig_bvp = np.zeros(shape=[int(len(df_hr) / len(Params.list_roi_name)), len(Params.list_roi_name)])
         sig_bpm = np.zeros(shape=[int(len(df_hr) / len(Params.list_roi_name)), len(Params.list_roi_name)])
@@ -59,8 +60,9 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
         df_eval = pd.concat([df_eval, df_metric])
         df_eval.reset_index(drop=True, inplace=True)
         df_eval.loc[len(df_eval) - len(Params.list_roi_name):, 'attendant'] = num_attendant
+
         # Dataframe saving.
-        df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_' + algorithm + '.csv'))
+        df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_' + algorithm + '1.csv'))
 
     elif name_dataset == '!UBFC-rPPG':  # UBFC-rPPG dataset.
         list_attendant = [1] + list(range(3, 6)) + list(range(8, 19)) + [20] + \
@@ -71,7 +73,7 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
         for num_attendant in list_attendant:
             print([name_dataset, algorithm, num_attendant])
             # Load BVP and HR signals.
-            dir_hr = os.path.join(dir_crt, 'data', name_dataset, 'hr', str(num_attendant)+'_'+algorithm+'.csv')
+            dir_hr = os.path.join(dir_crt, 'data', name_dataset, 'hr', str(num_attendant)+'_'+algorithm+'1.csv')
             df_hr = pd.read_csv(dir_hr, index_col=0)
             # Load ground truth.
             gtTime, gtTrace, gtHR = GT.get_GT(specification=['realistic', num_attendant], 
@@ -89,7 +91,7 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
             df_eval.reset_index(drop=True, inplace=True)
             df_eval.loc[len(df_eval)-len(Params.list_roi_name):, 'attendant'] = num_attendant
             # Dataframe saving.
-            df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_'+algorithm+'.csv'))
+            df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_'+algorithm+'1.csv'))
 
 
     elif name_dataset == '!UBFC-Phys':   # UBFC-Phys dataset.
@@ -104,7 +106,7 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
             for condition in list_condition:
                 print([name_dataset, algorithm, num_attendant, condition])
                 # Load BVP and HR signals.
-                dir_hr = os.path.join(dir_crt, 'data', name_dataset, 'hr', str(num_attendant)+'_'+str(condition)+'_'+algorithm+'.csv')
+                dir_hr = os.path.join(dir_crt, 'data', name_dataset, 'hr', str(num_attendant)+'_'+str(condition)+'_'+algorithm+'1.csv')
                 df_hr = pd.read_csv(dir_hr, index_col=0)
                 # Load groundtruth.
                 gtTime, gtTrace, gtHR = GT.get_GT(specification=[num_attendant, condition], 
@@ -123,7 +125,7 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
                 df_eval.loc[len(df_eval)-len(Params.list_roi_name):, 'attendant'] = num_attendant
                 df_eval.loc[len(df_eval)-len(Params.list_roi_name):, 'condition'] = condition
                 # Dataframe saving.
-                df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_'+algorithm+'.csv'))
+                df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_'+algorithm+'1.csv'))
 
 
     elif name_dataset == '!LGI-PPGI':   # LGI-PPGI dataset.
@@ -136,7 +138,7 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
             for motion in list_motion:
                 print([name_dataset, algorithm, name_attendant, motion])
                 # Load BVP and HR signals.
-                dir_hr = os.path.join(dir_crt, 'data', name_dataset, 'hr', name_attendant+'_'+motion+'_'+algorithm+'.csv')
+                dir_hr = os.path.join(dir_crt, 'data', name_dataset, 'hr', name_attendant+'_'+motion+'_'+algorithm+'1.csv')
                 df_hr = pd.read_csv(dir_hr, index_col=0)
                 # Load groundtruth.
                 gtTime, gtTrace, gtHR = GT.get_GT(specification=[name_attendant, motion], 
@@ -155,7 +157,7 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
                 df_eval.loc[len(df_eval)-len(Params.list_roi_name):, 'attendant'] = name_attendant
                 df_eval.loc[len(df_eval)-len(Params.list_roi_name):, 'motion'] = motion
                 # Dataframe saving.
-                df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_'+algorithm+'.csv'))
+                df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_'+algorithm+'1.csv'))
         
 
     elif name_dataset == '!BUAA-MIHR':   # BUAA-MIHR dataset.
@@ -173,7 +175,7 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
                 print([name_dataset, algorithm, num_attendant, lux])
                 # Load BVP and HR signals.
                 dir_hr = os.path.join(dir_crt, 'data', name_dataset, 'hr', str(num_attendant).zfill(2) + \
-                                      '_' + str(lux).replace(' ', '') + '_' + algorithm+'.csv')
+                                      '_' + str(lux).replace(' ', '') + '_' + algorithm+'1.csv')
                 df_hr = pd.read_csv(dir_hr, index_col=None)
                 # Load groundtruth.
                 name = list_name[num_attendant-1]
@@ -194,7 +196,7 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
                 df_eval.loc[len(df_eval)-len(Params.list_roi_name):, 'attendant'] = num_attendant
                 df_eval.loc[len(df_eval)-len(Params.list_roi_name):, 'lux'] = lux.replace('lux ', '')
                 # Dataframe saving.
-                df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_'+algorithm+'.csv'))
+                df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_'+algorithm+'1.csv'))
 
 
 if __name__ == "__main__":

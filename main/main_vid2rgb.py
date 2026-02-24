@@ -12,6 +12,7 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Turn off oneDNN custom operations.
 import sys
 import pandas as pd
 from tqdm import tqdm
+import cv2
 dir_crt = os.getcwd()
 sys.path.append(os.path.join(dir_crt, 'util'))
 from main.util import util_pyVHR, util_analysis
@@ -48,7 +49,9 @@ def main_vid2rgb(name_dataset):
         df_rgb, num_nan = util_analysis.frames_to_sig(frame_folder=frame_folder, Params=Params)
         # Save RGB signals.
 
-        dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'rgb', '.csv')
+
+
+        dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'rgb', '1.csv')
         df_rgb.to_csv(dir_save_data, index=False)
         # Save nan events.
         df_nan.loc[len(df_nan)] = [1, num_nan]
@@ -69,7 +72,7 @@ def main_vid2rgb(name_dataset):
             # RGB signal extraction.
             df_rgb, num_nan = util_analysis.vid_to_sig(dir_vid=dir_vid, Params=Params)
             # Save RGB signals.
-            dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(num_attendant)+'.csv')
+            dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(num_attendant)+'1.csv')
             df_rgb.to_csv(dir_save_data, index=False)
             # Save nan events.
             df_nan.loc[len(df_nan)] = [num_attendant, num_nan] 
@@ -94,7 +97,7 @@ def main_vid2rgb(name_dataset):
                 # RGB signal extraction.
                 df_rgb, num_nan = util_analysis.vid_to_sig(dir_vid=dir_vid, Params=Params)
                 # Save RGB signals.
-                dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(num_attendant)+'_'+str(condition)+'.csv')
+                dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(num_attendant)+'_'+str(condition)+'1.csv')
                 df_rgb.to_csv(dir_save_data, index=False)
                 # Save nan events.
                 df_nan.loc[len(df_nan)] = [num_attendant, condition, num_nan] 
@@ -119,7 +122,7 @@ def main_vid2rgb(name_dataset):
                 # RGB signal extraction.
                 df_rgb, num_nan = util_analysis.vid_to_sig(dir_vid=dir_vid, Params=Params)
                 # Save RGB signals.
-                dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'rgb', attendant+'_'+motion+'.csv')
+                dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'rgb', attendant+'_'+motion+'1.csv')
                 df_rgb.to_csv(dir_save_data, index=False)
                 # Save nan events.
                 df_nan.loc[len(df_nan)] = [attendant, motion, num_nan] 
@@ -147,7 +150,7 @@ def main_vid2rgb(name_dataset):
                 # RGB signal extraction.
                 df_rgb, num_nan = util_analysis.vid_to_sig(dir_vid=dir_vid, Params=Params)
                 # Save RGB signals.
-                dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(num_attendant).zfill(2)+'_'+str(lux).replace(' ', '')+'.csv')
+                dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(num_attendant).zfill(2)+'_'+str(lux).replace(' ', '')+'1.csv')
                 df_rgb.to_csv(dir_save_data, index=False)
                 # Save nan events.
                 df_nan.loc[len(df_nan)] = [num_attendant, lux, num_nan] 

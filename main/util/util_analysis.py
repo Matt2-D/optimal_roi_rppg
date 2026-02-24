@@ -131,10 +131,9 @@ class GroundTruth():
             gtTrace = pd.to_numeric(df_GT[TRACE_COL_NAME], errors='coerce').to_numpy(dtype=float)
 
             gtHR = None
-            if HR_COL_NAME in df_GT.columns:
-                gtHRcol = pd.to_numeric(df_GT[HR_COL_NAME], errors='coerce').to_numpy(dtype=float)
-                # Treat zeros as missing if your device uses 0 to mean "no reading"
-                gtHR = np.where(gtHRcol == 0, np.nan, gtHRcol)
+            gtHRcol = pd.to_numeric(df_GT[HR_COL_NAME], errors='coerce').to_numpy(dtype=float)
+            # Treat zeros as missing if your device uses 0 to mean "no reading"
+            gtHR = np.where(gtHRcol == 0, np.nan, gtHRcol)
 
 
         elif self.name_dataset == '!UBFC-rPPG':  # UBFC-rPPG dataset.
@@ -156,7 +155,7 @@ class GroundTruth():
 
         elif self.name_dataset == '!UBFC-Phys':  # UBFC-Phys dataset.
             # Groundtruth BVP trace.
-            dir_bvp = os.path.join(self.dir_dataset, 's'+str(specification[0]), 'bvp_s'+str(specification[0])+'_T'+str(specification[1])+'.csv')
+            dir_bvp = os.path.join(self.dir_dataset, 's'+str(specification[0]), 'bvp_s'+str(specification[0])+'_T'+str(specification[1])+'1.csv')
             gtTrace = np.loadtxt(dir_bvp)
             # Groundtruth video.
             dir_vid = os.path.join(self.dir_dataset, 's'+str(specification[0]), 'vid_s'+str(specification[0])+'_T'+str(specification[1])+'.avi')
@@ -167,7 +166,7 @@ class GroundTruth():
             # Groundtruth time.
             gtTime = np.linspace(start=0, stop=duration, num=num_frame)
             # Groundtruth hr.
-            dir_bpm = os.path.join(self.dir_dataset, 's'+str(specification[0]), 'bpm_s'+str(specification[0])+'_T'+str(specification[1])+'.csv')
+            dir_bpm = os.path.join(self.dir_dataset, 's'+str(specification[0]), 'bpm_s'+str(specification[0])+'_T'+str(specification[1])+'1.csv')
             gtHR = np.loadtxt(dir_bpm)
 
 
@@ -213,7 +212,7 @@ class GroundTruth():
             duration = num_frame/fps
             gtTime = np.linspace(start=0, stop=duration, num=int(num_frame))
             # HR data.
-            df_HR = pd.read_csv(os.path.join(dir_crt, specification[1].replace(' ', '')+'_'+specification[2]+'.csv'))
+            df_HR = pd.read_csv(os.path.join(dir_crt, specification[1].replace(' ', '')+'_'+specification[2]+'1.csv'))
             gtHR = df_HR['PULSE'].values
             # HR signal resampling.
         
@@ -262,7 +261,6 @@ class FaceDetector():
         self.list_roi_num = np.array(Params.list_roi_num, dtype=object)
         # The list containing names of different ROIs. Size = [num_roi].
         self.list_roi_name = np.array(Params.list_roi_name, dtype=object)
-
 
     def extract_landmark(self, img):
         """Extract 2D keypoint locations.
@@ -347,7 +345,10 @@ class FaceDetector():
         -------
         img_draw: The output image after drawing the ROI of the current frame. 
         """
-        
+
+        # Always have a default to return
+        img_draw = img.copy()
+
         img_RGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # BGR -> RGB.
         results = self.faceMesh.process(img_RGB)  # Apply face mesh.
         mp_face_mesh = mp.solutions.face_mesh_connections
@@ -391,7 +392,7 @@ def frames_to_sig(frame_folder, Params):
     frame_files = sorted(os.listdir(frame_folder))
     for f in frame_files:
         counter += 1
-        if counter > 600:
+        if counter > 4000:
             continue
         img_frame = cv2.imread(os.path.join(frame_folder, f))
         if img_frame is None:
@@ -401,7 +402,7 @@ def frames_to_sig(frame_folder, Params):
         loc_landmark = Detector_crt.extract_landmark(img=img_frame)  # Size = [468, 3]
         # Extract RGB signal.
 
-        print(counter, "frames out of 3000")
+        print(counter, "frames out of 4000")
         sig_rgb = Detector_crt.extract_RGB(img=img_frame, loc_landmark=loc_landmark)  # Size = [num_roi, 3].
         # Loop over all ROIs and save the RGB data.
         df_rgb_tmp = pd.DataFrame(columns=['frame', 'time', 'ROI', 'R', 'G', 'B'],
@@ -413,6 +414,12 @@ def frames_to_sig(frame_folder, Params):
                 # If no face is detected.
                 df_rgb_tmp.loc[i_roi, ['R', 'G', 'B']] = np.nan
             else:
+                # show image
+                roi_name = Params.list_roi_name[i_roi]  # index -> name
+                img_draw = Detector_crt.faceMeshDraw(img_frame, roi_name)
+                cv2.imshow("img_draw", img_draw)
+                cv2.waitKey(1)  # let window update
+
                 # If the face is detected.
                 # RGB channels.
                 df_rgb_tmp.loc[i_roi, ['R', 'G', 'B']] = sig_rgb[i_roi, :]
@@ -643,6 +650,7 @@ def rppg_hr_pipe(sig_rgb, method, Params):
     return sig_bvp, sig_bpm
 
 
+
 def eval_pipe(sig_bvp, sig_bpm, gtTime, gtTrace, gtHR, Params):
     """The complete pipeline for rPPG algorithm evaluation.
        This evaluation is based on BVP & BPM signals.
@@ -680,43 +688,115 @@ def eval_pipe(sig_bvp, sig_bpm, gtTime, gtTrace, gtHR, Params):
         # BPM signal of each ROI.
         sig_bpm_crt = sig_bpm[:, i]
         # Windowing. This process helps stabilize the evaluation results. Len_win = 10s.
-        for slice_start in np.arange(0, len(gtTrace), round(len(gtTrace)*10/np.max(gtTime))):
-            if slice_start+round(len(gtTrace)*10/np.max(gtTime)) >= len(gtTrace):
-                gtTrace_crt = gtTrace[len(gtTrace)-round(len(gtTrace)*10/np.max(gtTime)):]
-                gtHR_crt = gtHR[len(gtTrace)-round(len(gtTrace)*10/np.max(gtTime)):]
-                sig_rppg_crt_slice = sig_bvp_crt[len(gtTrace)-round(len(gtTrace)*10/np.max(gtTime)):]
-                sig_bpm_crt_slice = sig_bpm_crt[len(gtTrace)-round(len(gtTrace)*10/np.max(gtTime)):]
-            else:
-                gtTrace_crt = gtTrace[slice_start:slice_start+round(len(gtTrace)*10/np.max(gtTime))]
-                gtHR_crt = gtHR[slice_start:slice_start+round(len(gtTrace)*10/np.max(gtTime))]
-                sig_rppg_crt_slice = sig_bvp_crt[slice_start:slice_start+round(len(gtTrace)*10/np.max(gtTime))]
-                sig_bpm_crt_slice = sig_bpm_crt[slice_start:slice_start+round(len(gtTrace)*10/np.max(gtTime))]
-            # BVP signal normalization. 
-            sig_rppg_crt_slice = (sig_rppg_crt_slice-np.min(sig_rppg_crt_slice))/(np.max(sig_rppg_crt_slice)-np.min(sig_rppg_crt_slice))
-            gtTrace_crt = (gtTrace_crt-np.min(gtTrace_crt))/(np.max(gtTrace_crt)-np.min(gtTrace_crt))
-            # DTW.
-            dist_dtw = dtw.distance(gtTrace_crt, sig_rppg_crt_slice)
-            # PCC.
-            PCC = np.abs(np.corrcoef(gtTrace_crt, sig_rppg_crt_slice)[0, 1])
-            # CCC.
-            CCC = np.abs(
-                util_pyVHR.concordance_correlation_coefficient(bpm_true=gtTrace_crt, bpm_pred=sig_rppg_crt_slice))
-            # RMSE.
-            RMSE = np.sqrt(metrics.mean_absolute_error(gtHR_crt, sig_bpm_crt_slice))
-            # MAE.
-            MAE = metrics.mean_absolute_error(gtHR_crt, sig_bpm_crt_slice)
-            # MAPE.
-            MAPE = metrics.mean_absolute_percentage_error(gtHR_crt, sig_bpm_crt_slice)
+        # --- derive sampling from gtTime (ms) and set window/hop in samples ---
+        t = gtTime.astype("float64")
+        t = t[np.isfinite(t)]
+        if t.size < 2:
+            raise ValueError("gtTime must contain at least 2 finite values.")
 
-            list_DTW[i] = list_DTW[i] + dist_dtw
-            list_PCC[i] = list_PCC[i] + PCC
-            list_CCC[i] = list_CCC[i] + CCC
-            list_RMSE[i] = list_RMSE[i] + RMSE
-            list_MAE[i] = list_MAE[i] + MAE
-            list_MAPE[i] = list_MAPE[i] + MAPE
+        dt = np.diff(t)
+        dt = dt[dt > 0]
+        if dt.size == 0:
+            raise ValueError("gtTime has no positive time increments (duplicates or non-monotonic).")
+
+        dt_ms = float(np.median(dt))  # median timestep in ms
+        fs = 1000.0 / dt_ms  # Hz (samples per second)
+
+        win_seconds = 10.0
+        win_samples = int(max(1, round(win_seconds * fs)))
+        hop_samples = win_samples  # change if you want overlap, e.g., int(win_samples // 2)
+
+        # --- inside your ROI loop ---
+        for i in tqdm(range(sig_bpm.shape[1])):
+            sig_bvp_crt = sig_bvp[:, i]
+            sig_bpm_crt = sig_bpm[:, i]
+
+            # Make all sequences the same usable length
+            N = min(len(gtTrace), len(sig_bvp_crt), len(sig_bpm_crt), len(gtHR) if gtHR is not None else len(gtTrace))
+            gtTrace_use = gtTrace[:N]
+            gtHR_use = gtHR[:N] if gtHR is not None else None
+            sig_bvp_use = sig_bvp_crt[:N]
+            sig_bpm_use = sig_bpm_crt[:N]
+
+            if N < win_samples:
+                raise ValueError(
+                    f"Not enough samples for a {win_seconds}s window: N={N}, win_samples={win_samples}. "
+                    "Reduce window size or check your inputs."
+                )
+
+            for slice_start in range(0, N - win_samples + 1, hop_samples):
+                slice_end = slice_start + win_samples
+
+                gtTrace_crt = gtTrace_use[slice_start:slice_end]
+                gtHR_crt = gtHR_use[slice_start:slice_end] if gtHR_use is not None else None
+                sig_rppg_crt_slice = sig_bvp_use[slice_start:slice_end]
+                sig_bpm_crt_slice = sig_bpm_use[slice_start:slice_end]
+
+                # --- guards against empty/all-NaN slices ---
+                if sig_rppg_crt_slice.size == 0:
+                    # nothing to do for this slice
+                    continue
+
+                # If you have NaNs, normalize only finite values
+                finite_mask = np.isfinite(sig_rppg_crt_slice)
+                if finite_mask.sum() == 0:
+                    # slice has no finite samples to normalize
+                    continue
+
+                x = sig_rppg_crt_slice[finite_mask]
+                # Use nanmin/nanmax to be robust if x could still contain NaN (it shouldn’t after mask)
+                xmin = np.nanmin(x)
+                xmax = np.nanmax(x)
+                denom = xmax - xmin
+
+                if not np.isfinite(denom) or denom == 0:
+                    # constant slice or invalid range; either skip or use an alternative normalization
+                    # Option A: skip this slice
+                    # continue
+
+                    # Option B (fallback): z-score normalization if std > 0
+                    x_mean = np.nanmean(x)
+                    x_std = np.nanstd(x)
+                    if not np.isfinite(x_std) or x_std == 0:
+                        # still no variance; skip
+                        continue
+                    x_norm = (x - x_mean) / x_std
+                else:
+                    # stable min-max normalization with tiny epsilon in denominator
+                    eps = 1e-12
+                    x_norm = (x - xmin) / (denom + eps)
+
+                # write back normalized finite values; keep non-finite as-is
+                sig_rppg_norm = sig_rppg_crt_slice.copy()
+                sig_rppg_norm[finite_mask] = x_norm
+
+                # ---- continue with your evaluation using:
+                # gtTrace_crt, gtHR_crt, sig_rppg_norm, sig_bpm_crt_slice
+                # e.g., compute metrics on this window ...
+                gtTrace_crt = (gtTrace_crt-np.min(gtTrace_crt))/(np.max(gtTrace_crt)-np.min(gtTrace_crt))
+                # DTW.
+                dist_dtw = dtw.distance(gtTrace_crt, sig_rppg_crt_slice)
+                # PCC.
+                PCC = np.abs(np.corrcoef(gtTrace_crt, sig_rppg_crt_slice)[0, 1])
+                # CCC.
+                CCC = np.abs(
+                    util_pyVHR.concordance_correlation_coefficient(bpm_true=gtTrace_crt, bpm_pred=sig_rppg_crt_slice))
+                # RMSE.
+                RMSE = safe_rmse(gtHR_crt, sig_bpm_crt_slice)
+                # MAE.
+                MAE  = safe_mae(gtHR_crt, sig_bpm_crt_slice)
+                # MAPE.
+                MAPE = safe_mape(gtHR_crt, sig_bpm_crt_slice)
+
+                list_DTW[i] = list_DTW[i] + dist_dtw
+                list_PCC[i] = list_PCC[i] + PCC
+                list_CCC[i] = list_CCC[i] + CCC
+                list_RMSE[i] = list_RMSE[i] + RMSE
+                list_MAE[i] = list_MAE[i] + MAE
+                list_MAPE[i] = list_MAPE[i] + MAPE
 
     # Averaging.
-    num_win = len(np.arange(0, len(gtTrace), round(len(gtTrace)*10/np.max(gtTime))))
+    num_win = len(np.arange(0, len(gtTrace), hop_samples))
     list_DTW = list_DTW/num_win
     list_PCC = list_PCC/num_win
     list_CCC = list_CCC/num_win
@@ -734,3 +814,29 @@ def eval_pipe(sig_bvp, sig_bpm, gtTime, gtTrace, gtHR, Params):
     df_metric.loc[:, 'MAPE'] = list_MAPE
 
     return df_metric
+
+def safe_rmse(a, b):
+    """Correct RMSE (sqrt of MSE), with NaN guards."""
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    m = np.isfinite(a) & np.isfinite(b)
+    if m.sum() == 0:
+        return np.nan
+    return float(np.sqrt(metrics.mean_squared_error(a[m], b[m])))
+
+
+def safe_mae(a, b):
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    m = np.isfinite(a) & np.isfinite(b)
+    if m.sum() == 0:
+        return np.nan
+    return float(metrics.mean_absolute_error(a[m], b[m]))
+
+def safe_mape(a, b):
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    m = np.isfinite(a) & np.isfinite(b)
+    if m.sum() == 0:
+        return np.nan
+    return float(metrics.mean_absolute_percentage_error(a[m], b[m]))

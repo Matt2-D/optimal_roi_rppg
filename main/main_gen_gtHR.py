@@ -77,7 +77,7 @@ def main_gen_gtHR(dir_dataset):
             df_sig_bpm = df_sig_bpm.interpolate(method='linear')
             df_sig_bpm = df_sig_bpm.ffill().bfill()
             # Save BPM signal.
-            dir_bpm = os.path.join(dir_dataset, 's'+str(num_attendant), 'bpm_s'+str(num_attendant)+'_T'+str(num_condition)+'.csv')
+            dir_bpm = os.path.join(dir_dataset, 's'+str(num_attendant), 'bpm_s'+str(num_attendant)+'_T'+str(num_condition)+'1.csv')
             df_sig_bpm.to_csv(dir_bpm, index=False, header=None)
 
 
