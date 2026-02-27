@@ -392,7 +392,10 @@ def frames_to_sig(frame_folder, Params):
     frame_files = sorted(os.listdir(frame_folder))
     for f in frame_files:
         counter += 1
-        if counter > 4000:
+        if counter > 500:
+            continue
+        # Skip any file ending in face_1.png
+        if f.endswith("face_1.png"):
             continue
         img_frame = cv2.imread(os.path.join(frame_folder, f))
         if img_frame is None:
@@ -415,10 +418,10 @@ def frames_to_sig(frame_folder, Params):
                 df_rgb_tmp.loc[i_roi, ['R', 'G', 'B']] = np.nan
             else:
                 # show image
-                roi_name = Params.list_roi_name[i_roi]  # index -> name
-                img_draw = Detector_crt.faceMeshDraw(img_frame, roi_name)
-                cv2.imshow("img_draw", img_draw)
-                cv2.waitKey(1)  # let window update
+                #roi_name = Params.list_roi_name[i_roi]  # index -> name
+                #img_draw = Detector_crt.faceMeshDraw(img_frame, roi_name)
+                #cv2.imshow("img_draw", img_draw)
+                #cv2.waitKey(1)  # let window update
 
                 # If the face is detected.
                 # RGB channels.
@@ -602,53 +605,103 @@ def rppg_hr_pipe(sig_rgb, method, Params):
     # Windowed RGB signal -> windowed raw bvp signal.
     sig_bvp_win = sig_windowed_to_bvp(sig_rgb_win=sig_rgb_win, method=method, Params=Params)
 
-    # Windowed raw bvp signal -> windowed filtered bvp signal.
-    sig_bvp_win_filtered = util_pyVHR.apply_filter(sig_bvp_win, util_pyVHR.BPfilter, params={'order':6, 'minHz':0.65, 'maxHz':4.0, 'fps':Params.fps})
-    # Fill nan values.
-    for i_window in range(len(sig_bvp_win_filtered)):
-        is_nan = np.any(np.isnan(sig_bvp_win_filtered[i_window]))
-        if is_nan == False:
-            continue
-        elif i_window == 0:
-            sig_bvp_win_filtered[i_window] = np.ones(28, np.shape(sig_bvp_win_filtered[i_window])[1])
-        else:
-            sig_bvp_win_filtered[i_window] = sig_bvp_win_filtered[i_window-1]
-    # De-windowing bvp signal.
-    print(len(sig_bvp_win_filtered))
+    # --- 3. Filter BVP windows ---
+    sig_bvp_win_filtered = util_pyVHR.apply_filter(
+        sig_bvp_win,
+        util_pyVHR.BPfilter,
+        params={'order': 6, 'minHz': 0.65, 'maxHz': 4.0, 'fps': Params.fps}
+    )
+
+    # Replace NaN windows
+    for i in range(len(sig_bvp_win_filtered)):
+        if np.any(np.isnan(sig_bvp_win_filtered[i])):
+            if i == 0:
+                sig_bvp_win_filtered[i] = np.ones_like(sig_bvp_win_filtered[i])
+            else:
+                sig_bvp_win_filtered[i] = sig_bvp_win_filtered[i - 1]
+
+    # --- 4. De-window BVP back to full-length ---
     for i in range(len(sig_bvp_win_filtered)):
         if i == 0:
-            sig_bvp = (sig_bvp_win_filtered[i])[:, :round(Params.fps*Params.stride_window)]
+            sig_bvp = sig_bvp_win_filtered[i][:, :round(Params.fps * Params.stride_window)]
         else:
-            sig_bvp = np.concatenate((sig_bvp, (sig_bvp_win_filtered[i])[:, :round(Params.fps*Params.stride_window)]), axis=1)
-    sig_bvp = np.concatenate((sig_bvp, (sig_bvp_win_filtered[i])[:, round(Params.fps*Params.stride_window):]), axis=1)
-    # Windowed filtered bvp signal -> bpm(Beats Per Minute) signal.
-    multi_sig_bpm = util_pyVHR.BVP_to_BPM(bvps=sig_bvp_win_filtered, fps=Params.fps, minHz=0.65, maxHz=4.0)
-    # Remove nan values.
+            sig_bvp = np.concatenate(
+                (sig_bvp, sig_bvp_win_filtered[i][:, :round(Params.fps * Params.stride_window)]),
+                axis=1
+            )
+
+    # Add last partial window
+    sig_bvp = np.concatenate(
+        (sig_bvp, sig_bvp_win_filtered[-1][:, round(Params.fps * Params.stride_window):]),
+        axis=1
+    )
+
+    # --- 5. Compute BPM + SNR per window AND per ROI ---
+    num_windows = len(sig_bvp_win_filtered)
+    num_rois = sig_bvp_win_filtered[0].shape[0]
+
+    multi_sig_bpm = np.zeros((num_windows, num_rois))
+    multi_sig_snr = np.zeros((num_windows, num_rois))
+
+    for w, win in enumerate(sig_bvp_win_filtered):
+        for r in range(num_rois):
+            roi_signal = win[r, :].astype(np.float32)
+
+            bpm_obj = util_pyVHR.BPM(
+                data=roi_signal,
+                fps=Params.fps,
+                minHz=0.65,
+                maxHz=4.0
+            )
+
+            bpm_val = bpm_obj.BVP_to_BPM()  # already in BPM
+            snr_val = bpm_obj.compute_snr_hr(bpm_val)
+
+            multi_sig_bpm[w, r] = bpm_val
+            multi_sig_snr[w, r] = snr_val
+
+    #multi_sig_bpm = np.array(multi_sig_bpm)  # shape: [num_windows, num_estimators]
+    #multi_sig_snr = np.array(multi_sig_snr)  # shape: [num_windows]
+
+    # Replace NaN BPM windows
     for i in range(len(multi_sig_bpm)):
-        if len(multi_sig_bpm[i]) != len(Params.list_roi_name):
-            multi_sig_bpm[i] = multi_sig_bpm[i-1]
-    # List -> numpy array.
-    sig_bpm = np.array(multi_sig_bpm)
-    # Reshaping.
-    sig_bvp_old = np.transpose(sig_bvp, [1, 0])
-    sig_bpm_old = np.transpose(sig_bpm, [0, 1])
-    # Resampling.
+        if np.any(np.isnan(multi_sig_bpm[i])):
+            if i == 0:
+                multi_sig_bpm[i] = np.zeros_like(multi_sig_bpm[i])
+            else:
+                multi_sig_bpm[i] = multi_sig_bpm[i - 1]
+
+    # --- 6. Interpolate BPM + SNR back to frame-level ---
+    sig_bvp_old = sig_bvp.T  # [num_frames, num_ROI]
+    sig_bpm_old = multi_sig_bpm.T  # [num_ROI, num_windows]
+
     sig_bvp = np.zeros_like(sig_rgb[:, :, 0])
     sig_bpm = np.zeros_like(sig_rgb[:, :, 0])
-    # Across different ROIs.
-    for i_roi in range(sig_bvp_old.shape[1]):
-        # BVP signal.
-        sig_bvp[:, i_roi] = np.interp(x=np.linspace(0, len(sig_bvp), len(sig_bvp)), 
-                                      xp=np.linspace(0, len(sig_bvp), len(sig_bvp_old)), 
-                                      fp=sig_bvp_old[:, i_roi])
-        # HR signal.
-        sig_bpm[:, i_roi] = np.interp(x=np.linspace(0, len(sig_bpm), len(sig_bpm)), 
-                                      xp=np.linspace(0, len(sig_bpm), len(sig_bpm_old)), 
-                                      fp=sig_bpm_old[:, i_roi])
-    
+    sig_snr = np.zeros_like(sig_rgb[:, :, 0])
 
-    return sig_bvp, sig_bpm
+    for i_roi in range(sig_bpm_old.shape[0]):
+        # BVP interpolation
+        sig_bvp[:, i_roi] = np.interp(
+            x=np.linspace(0, len(sig_bvp), len(sig_bvp)),
+            xp=np.linspace(0, len(sig_bvp), len(sig_bvp_old)),
+            fp=sig_bvp_old[:, i_roi]
+        )
 
+        # BPM interpolation
+        sig_bpm[:, i_roi] = np.interp(
+            x=np.linspace(0, len(sig_bpm), len(sig_bpm)),
+            xp=np.linspace(0, len(sig_bpm), len(sig_bpm_old[i_roi])),
+            fp=sig_bpm_old[i_roi]
+        )
+
+        # SNR interpolation (per ROI)
+        sig_snr[:, i_roi] = np.interp(
+            x=np.linspace(0, len(sig_snr), len(sig_snr)),
+            xp=np.linspace(0, len(multi_sig_snr[:, i_roi]), len(multi_sig_snr[:, i_roi])),
+            fp=multi_sig_snr[:, i_roi]
+        )
+
+    return sig_bvp, sig_bpm, sig_snr
 
 
 def eval_pipe(sig_bvp, sig_bpm, gtTime, gtTrace, gtHR, Params):

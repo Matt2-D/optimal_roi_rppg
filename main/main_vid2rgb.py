@@ -48,9 +48,6 @@ def main_vid2rgb(name_dataset):
         # RGB signal extraction.
         df_rgb, num_nan = util_analysis.frames_to_sig(frame_folder=frame_folder, Params=Params)
         # Save RGB signals.
-
-
-
         dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'rgb', '1.csv')
         df_rgb.to_csv(dir_save_data, index=False)
         # Save nan events.

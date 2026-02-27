@@ -125,6 +125,90 @@ class BPM:
         Pmax = np.argmax(Power, axis=1)  # power max
         return Pfreqs[Pmax.squeeze()]
 
+    def compute_snr(self):
+        if self.data.shape[0] == 0:
+            return np.float32(0.0)
+        Pfreqs, Power = Welch(self.data,self.fps,self.minHz,self.maxHz, self.nFFT)
+
+        freqs_of_interest = Pfreqs.squeeze()
+        fft_of_interest = Power.squeeze()
+        if len(fft_of_interest) == 0:
+            return np.nan
+        #Fundemental peak
+        maxindex = np.argmax(fft_of_interest)
+        fundemental_freq = freqs_of_interest[maxindex]
+
+        #Harmonic peak
+        harmonic_freq = fundemental_freq * 2
+        harmonicindex = np.argmin(np.abs(freqs_of_interest - harmonic_freq))
+
+        #Signal = fundemental + harmonic
+        totalsignal = fft_of_interest[maxindex] + fft_of_interest[harmonicindex]
+
+        #Noise = everything else
+        mask = np.ones_like(fft_of_interest, dtype=bool)
+        mask[[maxindex,harmonicindex]] = False
+        totalnoise = np.sum(fft_of_interest[mask])
+
+        snr_linear = totalsignal / totalnoise
+        snr_db = 10 * np.log10(snr_linear)
+
+        return snr_db
+
+    def compute_snr_hr(self, bpm_estimate, band_hz=0.4):
+        """
+        HR-specific SNR.
+        Higher SNR = better HR quality.
+        band_hz widened to ensure FFT bins fall inside the HR band.
+        """
+
+        # Validate BPM
+        if bpm_estimate is None or np.isnan(bpm_estimate) or bpm_estimate <= 0:
+            return np.nan
+
+        # Convert BPM → Hz
+        hr_hz = bpm_estimate / 60.0
+
+        # Compute Welch spectrum
+        Pfreqs, Power = Welch(self.data, self.fps, self.minHz, self.maxHz, self.nFFT)
+
+        freqs = Pfreqs.squeeze()
+        fft = Power.squeeze()
+
+        if len(fft) == 0:
+            return np.nan
+
+        # HR band
+        hr_low = hr_hz - band_hz
+        hr_high = hr_hz + band_hz
+
+        # Mask for HR band
+        hr_mask = (freqs >= hr_low) & (freqs <= hr_high)
+
+        # If no bins fall inside the HR band, fall back to nearest bin
+        if not np.any(hr_mask):
+            nearest_idx = np.argmin(np.abs(freqs - hr_hz))
+            hr_mask = np.zeros_like(freqs, dtype=bool)
+            hr_mask[nearest_idx] = True
+
+        # Signal = power in HR band
+        signal_power = np.sum(fft[hr_mask])
+
+        # Noise = power outside HR band
+        noise_power = np.sum(fft[~hr_mask])
+
+        # Avoid divide-by-zero
+        if noise_power <= 0 or signal_power <= 0:
+            return np.nan
+
+        # Linear SNR
+        snr_linear = signal_power / noise_power
+
+        # Convert to dB
+        snr_db = 10 * np.log10(snr_linear)
+
+        return snr_db
+
 # Transform BVP signals into HR values.
 def BVP_to_BPM(bvps, fps, minHz=0.65, maxHz=4.):
     """

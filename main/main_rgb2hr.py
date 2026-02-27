@@ -62,14 +62,15 @@ def main_rgb2hr(name_dataset, algorithm):
             # Get video fps.
             Params.fps = 50   # or whatever your dataset uses
             # RGB signal -> bvp signal & bpm signal.
-            sig_bvp, sig_bpm = util_analysis.rppg_hr_pipe(sig_rgb=sig_rgb, method=algorithm, Params=Params)
+            sig_bvp, sig_bpm, sig_snr = util_analysis.rppg_hr_pipe(sig_rgb=sig_rgb, method=algorithm, Params=Params)
             # Create the dataframe to save the HR-related data (bvp signal & bpm signal).
-            df_hr = pd.DataFrame(columns=['frame', 'time', 'ROI', 'BVP', 'BPM'], index=list(range(len(df_rgb))))
+            df_hr = pd.DataFrame(columns=['frame', 'time', 'ROI', 'BVP', 'BPM', 'SNR'], index=list(range(len(df_rgb))))
             df_hr.loc[:, ['frame', 'time', 'ROI']] = df_rgb.loc[:, ['frame', 'time', 'ROI']]
             # Loop over all ROIs.
             for i_roi in range(len(Params.list_roi_name)):
                 df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BVP'] = sig_bvp[:, i_roi]  # BVP signal.
                 df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BPM'] = sig_bpm[:, i_roi]  # BPM signal.
+                df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'SNR'] = sig_snr[:, i_roi]  # SNR score.
             # Data saving.
             dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'hr',
                                          str(num_attendant) + '_' + algorithm + '1.csv')
