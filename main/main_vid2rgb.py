@@ -12,11 +12,12 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Turn off oneDNN custom operations.
 import sys
 import pandas as pd
 from tqdm import tqdm
-from main_cropsense import run_cropsense
+from main.CropSense import main_cropsense
 import cv2
 dir_crt = os.getcwd()
 sys.path.append(os.path.join(dir_crt, 'util'))
 from main.util import util_pyVHR, util_analysis
+from main.CropSense.main_cropsense import run_cropsense
 
 
 def main_vid2rgb(name_dataset):
@@ -55,9 +56,6 @@ def main_vid2rgb(name_dataset):
 
 
             # Validate raw frames exist
-            if png_parent is None:
-                raise RuntimeError(f"No PNG folder found in {dist_folder}")
-
             if not os.path.isdir(raw_folder):
                 raise FileNotFoundError(
                     f"Expected raw frames at: {raw_folder}\n"
@@ -67,7 +65,7 @@ def main_vid2rgb(name_dataset):
             crop_stats = run_cropsense(
                 input_dir=raw_folder,
                 output_dir=cropped_folder,
-                croptype="face",  # change to "upperbody"/"fullbody" if needed
+                croptype="upperbody",  # change to "upperbody"/"fullbody" if needed
                 top_margin=0.2,
                 bottom_margin=0.2,
                 parallel=False,  # set to True to use multiprocessing
@@ -75,7 +73,6 @@ def main_vid2rgb(name_dataset):
 
             # Find the folder that contains PNG frames
             png_parent = None
-            CropSense.main(dist_folder)
             for item in os.listdir(dist_folder):
                 full = os.path.join(dist_folder, item)
                 if os.path.isdir(full) and item.startswith(f'attendant{attendant_id}-'):

@@ -5,12 +5,11 @@
 import os
 import cv2
 from tqdm import tqdm
-# CropSense internals
-import variable
-from image_processing import process_image
+from main.CropSense import variable
+from main.CropSense.image_processing import process_image
 
 # wrapper around CropSense
-#accepts input_dir / output_dir
+# accepts input_dir / output_dir
 # removes prompts
 
 # crop settings
@@ -25,8 +24,8 @@ DEFAULT_PREVIEW_DBG_RES  = variable.preview_debug_max_res
 def run_cropsense(
     input_dir: str, #folder with raw png's (attendant#/#/raw)
     output_dir: str, #destination folder for cropped frames (attendant#/#/cropped)
-    debug_dir: str | None = None, #leave as none for now
-    error_dir: str | None = None, #leave as none for now
+    debug_dir: None = None, #leave as none for now
+    error_dir: None = None, #leave as none for now
     croptype: str = DEFAULT_CROPTYPE,
     top_margin: float = DEFAULT_TOP_MARGIN,
     bottom_margin: float = DEFAULT_BOTTOM_MARGIN,
