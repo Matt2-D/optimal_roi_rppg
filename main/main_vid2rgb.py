@@ -12,7 +12,7 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Turn off oneDNN custom operations.
 import sys
 import pandas as pd
 from tqdm import tqdm
-from main import CropSense
+from main_cropsense import run_cropsense
 import cv2
 dir_crt = os.getcwd()
 sys.path.append(os.path.join(dir_crt, 'util'))
@@ -50,6 +50,28 @@ def main_vid2rgb(name_dataset):
                 f'attendant{attendant_id}',
                 str(dist)
             )
+            raw_folder     = os.path.join(dist_folder, "raw")
+            cropped_folder = os.path.join(dist_folder, "cropped")
+
+
+            # Validate raw frames exist
+            if png_parent is None:
+                raise RuntimeError(f"No PNG folder found in {dist_folder}")
+
+            if not os.path.isdir(raw_folder):
+                raise FileNotFoundError(
+                    f"Expected raw frames at: {raw_folder}\n"
+                )
+
+            # CropSense
+            crop_stats = run_cropsense(
+                input_dir=raw_folder,
+                output_dir=cropped_folder,
+                croptype="face",  # change to "upperbody"/"fullbody" if needed
+                top_margin=0.2,
+                bottom_margin=0.2,
+                parallel=False,  # set to True to use multiprocessing
+            )
 
             # Find the folder that contains PNG frames
             png_parent = None
@@ -60,21 +82,28 @@ def main_vid2rgb(name_dataset):
                     png_parent = full
                     break
 
-            if png_parent is None:
-                raise RuntimeError(f"No PNG folder found in {dist_folder}")
+            if crop_stats["faces_detected"] == 0:
+                print(f"[Pipeline] WARNING: No faces detected for dist={dist}. Skipping.")
+                continue
+
+
 
             # Extract RGB signal
             Params.fps = 50
             df_rgb, num_nan = util_analysis.frames_to_sig(
-                frame_folder=png_parent,
+                frame_folder=cropped_folder,
                 Params=Params
             )
 
             # Save RGB signals
+            save_dir = os.path.join(dir_crt, "data", name_dataset, "rgb")
+            os.makedirs(save_dir,exist_ok=True) #make sure the directory exists
+
             save_path = os.path.join(
                 dir_crt, 'data', name_dataset, 'rgb', f'{dist}.csv'
             )
             df_rgb.to_csv(save_path, index=False)
+            print("[Pipeline] RGB saved in,", save_path)
 
             # Save NaN events
             df_nan.loc[len(df_nan)] = [attendant_id, dist, num_nan]
