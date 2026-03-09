@@ -40,7 +40,7 @@ def main_rgb2hr(name_dataset, algorithm):
     # RGB signal -> bvp signal.
     if name_dataset == 'custom':
         # Sequence num of attendants.
-        list_attendant = [1]
+        list_attendant = [1] #manually insert
         # Loop over all attendants.
         for num_attendant in tqdm(list_attendant):
             # Parse the RGB signal from the RGB dataframe. Size = [num_frames, num_ROI, rgb_channels(3)].

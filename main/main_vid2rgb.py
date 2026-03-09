@@ -12,6 +12,7 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Turn off oneDNN custom operations.
 import sys
 import pandas as pd
 from tqdm import tqdm
+from main import CropSense
 import cv2
 dir_crt = os.getcwd()
 sys.path.append(os.path.join(dir_crt, 'util'))
@@ -36,24 +37,51 @@ def main_vid2rgb(name_dataset):
     Params = util_analysis.Params(dir_option=dir_option, name_dataset=name_dataset)
 
     if name_dataset == 'custom':
-        # Just one attendant in this case
-        print(dir_crt, name_dataset)
-        list_attendant = [1]
-        # Create a log to save num of nan.
-        df_nan = pd.DataFrame(columns=['attendant', 'num_nan'])
-        # Video directory.
-        frame_folder = os.path.join(Params.dir_dataset, '1/Yuao-1m-1min-video-recording-data-1')
-        # Video fps.
-        Params.fps = 50
-        # RGB signal extraction.
-        df_rgb, num_nan = util_analysis.frames_to_sig(frame_folder=frame_folder, Params=Params)
-        # Save RGB signals.
-        dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'rgb', '1.csv')
-        df_rgb.to_csv(dir_save_data, index=False)
-        # Save nan events.
-        df_nan.loc[len(df_nan)] = [1, num_nan]
-        dir_save_nan = os.path.join(dir_crt, 'data', name_dataset, 'rgb', 'nan_event.csv')
-        df_nan.to_csv(dir_save_nan, index=False)
+        attendant_id = 1
+        distances = [1, 2, 3]
+
+        df_nan = pd.DataFrame(columns=['attendant', 'distance', 'num_nan'])
+
+        #os.listdir(frame_folder)
+        for dist in distances:
+            # Path to distance folder
+            dist_folder = os.path.join(
+                Params.dir_dataset,
+                f'attendant{attendant_id}',
+                str(dist)
+            )
+
+            # Find the folder that contains PNG frames
+            png_parent = None
+            CropSense.main(dist_folder)
+            for item in os.listdir(dist_folder):
+                full = os.path.join(dist_folder, item)
+                if os.path.isdir(full) and item.startswith(f'attendant{attendant_id}-'):
+                    png_parent = full
+                    break
+
+            if png_parent is None:
+                raise RuntimeError(f"No PNG folder found in {dist_folder}")
+
+            # Extract RGB signal
+            Params.fps = 50
+            df_rgb, num_nan = util_analysis.frames_to_sig(
+                frame_folder=png_parent,
+                Params=Params
+            )
+
+            # Save RGB signals
+            save_path = os.path.join(
+                dir_crt, 'data', name_dataset, 'rgb', f'{dist}.csv'
+            )
+            df_rgb.to_csv(save_path, index=False)
+
+            # Save NaN events
+            df_nan.loc[len(df_nan)] = [attendant_id, dist, num_nan]
+
+        # Save NaN summary
+        nan_path = os.path.join(dir_crt, 'data', name_dataset, 'rgb', 'nan_event.csv')
+        df_nan.to_csv(nan_path, index=False)
     # Video -> RGB signal.
     elif name_dataset == '!UBFC-rPPG':
         # Sequnce num of attendants.
