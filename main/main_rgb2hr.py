@@ -49,16 +49,18 @@ def main_rgb2hr(name_dataset, algorithm):
             # Parse the RGB signal from the RGB dataframe. Size = [num_frames, num_ROI, rgb_channels(3)].
             dir_sig_rgb = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(dist) + '.csv')
             df_rgb = pd.read_csv(dir_sig_rgb)
+            #ROI list from CSV
+            roi_names = list(df_rgb['ROI'].unique())
+            num_rois = len(roi_names)
+            num_frames = df_rgb['frame'].max()
             # RGB signal initialization.
-            sig_rgb = np.zeros([df_rgb['frame'].max(), len(np.unique(df_rgb['ROI'].values)), 3])
+            sig_rgb = np.zeros([num_frames,num_rois, 3])
             # Loop over all ROIs.
-            for i_roi in range(len(Params.list_roi_name)):
-                sig_rgb[:, i_roi, 0] = df_rgb.loc[
-                    df_rgb['ROI'].values == Params.list_roi_name[i_roi], 'R']  # Red channel.
-                sig_rgb[:, i_roi, 1] = df_rgb.loc[
-                    df_rgb['ROI'].values == Params.list_roi_name[i_roi], 'G']  # Green channel.
-                sig_rgb[:, i_roi, 2] = df_rgb.loc[
-                    df_rgb['ROI'].values == Params.list_roi_name[i_roi], 'B']  # Blue channel.
+            for i_roi, roi_name in enumerate(roi_names):
+                mask = df_rgb['ROI'].values == roi_name
+                sig_rgb[:, i_roi, 0] = df_rgb.loc[mask, 'R'].values  # Red channel.
+                sig_rgb[:, i_roi, 1] = df_rgb.loc[mask, 'G'].values  # Green channel.
+                sig_rgb[:, i_roi, 2] = df_rgb.loc[mask, 'B'].values  # Blue channel.
 
             # RGB video information.
 
@@ -70,10 +72,11 @@ def main_rgb2hr(name_dataset, algorithm):
             df_hr = pd.DataFrame(columns=['frame', 'time', 'ROI', 'BVP', 'BPM', 'SNR'], index=list(range(len(df_rgb))))
             df_hr.loc[:, ['frame', 'time', 'ROI']] = df_rgb.loc[:, ['frame', 'time', 'ROI']]
             # Loop over all ROIs.
-            for i_roi in range(len(Params.list_roi_name)):
-                df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BVP'] = sig_bvp[:, i_roi]  # BVP signal.
-                df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BPM'] = sig_bpm[:, i_roi]  # BPM signal.
-                df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'SNR'] = sig_snr[:, i_roi]  # SNR score.
+            for i_roi, roi_name in enumerate(roi_names):
+                mask=df_hr['ROI'].values == roi_name
+                df_hr.loc[mask, 'BVP'] = sig_bvp[:, i_roi]  # BVP signal.
+                df_hr.loc[mask, 'BPM'] = sig_bpm[:, i_roi]  # BPM signal.
+                df_hr.loc[mask, 'SNR'] = sig_snr[:, i_roi]  # SNR score.
             # Data saving.
             dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'hr',
                                          str(dist) + '_' + algorithm + '1.csv')
