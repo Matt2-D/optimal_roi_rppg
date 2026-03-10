@@ -2,26 +2,25 @@
 Generate ground truth BPM data using existing BVP data for UBFC-Phys dataset.
 """
 
-# Author: Shuo Li
+# Original Author: Shuo Li
 # Date: 2023/08/18
 # Editor: Matthew Dowell
 # Date: 03/10/2026
 
 import warnings
+warnings.filterwarnings("ignore")
 
-from scipy.interpolate import interp1d
-
-warnings.filterwarnings("ignore")  # Ignore unnecessary warnings.
 import os
 import sys
-import cv2
-import yaml
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from scipy.interpolate import interp1d
+
 dir_crt = os.getcwd()
 sys.path.append(os.path.join(dir_crt, 'util'))
 from util import util_pyVHR
+
 
 LEN_WINDOW     = 6      # Window length (seconds)
 STRIDE_WINDOW  = 1      # Window stride (seconds)
@@ -31,11 +30,28 @@ MAX_HZ         = 4.0
 FPS            = 50
 NUM_FRAMES     = 3000   # Video frame count
 
+
+def _load_gt_csv(csv_path: str) -> pd.DataFrame:
+    # Load and validate the ground truth CSV
+    if not os.path.isfile(csv_path):
+        raise FileNotFoundError(f"Ground truth CSV not found: {csv_path}")
+    df = pd.read_csv(csv_path, index_col=None)
+    required = {"Signal_Value", "HR", "Package_Num"}
+    missing  = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Ground truth CSV missing columns: {missing}")
+    return df
+
+
+def _align_to_frames(signal: np.ndarray, target_len: int) -> np.ndarray:
+    #Resample signal to target_len frames
+    src_idx = np.linspace(0, 1, len(signal))
+    tgt_idx = np.linspace(0, 1, target_len)
+    return interp1d(src_idx, signal, kind='linear')(tgt_idx)
+
+
 def _estimate_bpm(sig_bvp: np.ndarray, fps: float) -> np.ndarray:
-    """
-    Sliding-window Welch BPM estimation on a 1-D BVP signal.
-    Returns a per-frame BPM array (zeros filled by linear interpolation).
-    """
+    # Welch BPM estimation
     len_window_frame   = int(LEN_WINDOW * fps)
     stride_window_frame = int(STRIDE_WINDOW * fps)
     sig_bpm = np.zeros(len(sig_bvp))
@@ -51,7 +67,7 @@ def _estimate_bpm(sig_bvp: np.ndarray, fps: float) -> np.ndarray:
         )
         Pmax = np.argmax(Power, axis=1)
         centre_idx = int(0.5 * (2 * idx_crt + len_window_frame - 1))
-        sig_bpm[centre_idx] = float(Pfreqs.squeeze()[Pmax.squeeze()]) * 60.0   # Hz → BPM
+        sig_bpm[centre_idx] = float(Pfreqs.squeeze()[Pmax.squeeze()])  # already in BPM (util_pyVHR.Welch returns BPM not Hz)
 
         idx_crt += stride_window_frame
 
@@ -61,28 +77,20 @@ def _estimate_bpm(sig_bvp: np.ndarray, fps: float) -> np.ndarray:
     s = s.interpolate(method='linear').ffill().bfill()
     return s.values
 
-def main_gen_gtHR(dir_dataset):
-    """Main function for generating ground truth BPM data for UBFC-Phys dataset.
+
+def main_gen_gtHR(dir_dataset: str) -> None:
+    """
+    Generate ground truth BPM and BVP files for all attendants/distances.
+
     Parameters
     ----------
-    dir_dataset: Directory of the dataset (UBFC-Phys).
-    Params: A class containing the pre-defined parameters for the preliminary analysis.
-    
-    Returns
-    -------
-
+    dir_dataset : Root dataset directory
+                  (e.g. data/custom  — attendant folders live inside)
     """
 
-    len_window = 6   # Window length in seconds.
-    stride_window = 1   # Window stride in seconds.
-    nFFT = 2048//1   # Freq. Resolution for STFTs.
-    minHz = 0.65  # Minimal frequency in Hz.
-    maxHz = 4.0   # Maximal frequency in Hz.
-
-    # List of attendants.
     list_attendant = [1]
-    # List of conditions.
-    distances = [1, 2, 3]
+    distances      = [1, 2, 3]
+
     # Output directory
     dir_out = os.path.join(os.getcwd(), 'data', 'custom', 'gtHR')
     os.makedirs(dir_out, exist_ok=True)
@@ -90,7 +98,6 @@ def main_gen_gtHR(dir_dataset):
     for num_attendant in tqdm(list_attendant, desc="Attendants"):
         for dist in tqdm(distances, desc=f"  Distances (att{num_attendant})", leave=False):
 
-            # ── Locate ground truth CSV ───────────────────────────────────────
             # Expected location: <dataset>/attendant<n>/<dist>/pulse_data.csv
             # Searches one level of subfolders to handle timestamped subdirs.
             dist_folder = os.path.join(
@@ -114,36 +121,28 @@ def main_gen_gtHR(dir_dataset):
                 continue
 
             print(f"\n  Loading: {gt_csv}")
-            df_gt =  pd.read_csv(gt_csv, index_col=None)
+            df_gt = _load_gt_csv(gt_csv)
 
-            # ── Extract and align BVP signal ──────────────────────────────────
+            #extract BVP
             sig_bvp_raw = df_gt['Signal_Value'].values.astype(np.float64)
 
             # Normalise to zero-mean (removes DC offset ~500)
             sig_bvp_raw = sig_bvp_raw - np.mean(sig_bvp_raw)
 
-            # Resample frames
-            src_idx = np.linspace(0, 1, len(sig_bvp_raw))
-            tgt_idx = np.linspace(0, 1, NUM_FRAMES)
-            sig_bvp = interp1d(src_idx, sig_bvp_raw, kind='linear')(tgt_idx)
+            # Resample from 2987 → 3000 frames
+            sig_bvp = _align_to_frames(sig_bvp_raw, NUM_FRAMES)
 
-            # ── Option A: use sparse HR column directly ───────────────────────
-            # Extract non-zero HR readings and interpolate to every frame.
+            # Remove zeros BEFORE resampling to avoid smearing zeros into signal.
             hr_sparse = df_gt['HR'].values.astype(np.float64)
-            src_idx = np.linspace(0, 1, len(hr_sparse))
-            tgt_idx = np.linspace(0, 1, NUM_FRAMES)
-            hr_sparse_aligned = interp1d(src_idx, hr_sparse, kind='linear')(tgt_idx)
+            hr_sparse[hr_sparse == 0] = np.nan
+            hr_filled = pd.Series(hr_sparse).interpolate(
+                method='linear').ffill().bfill().values
+            sig_bpm_direct = _align_to_frames(hr_filled, NUM_FRAMES)
 
-            # Replace zeros with NaN then interpolate
-            hr_sparse_aligned[hr_sparse_aligned == 0] = np.nan
-            hr_series = pd.Series(hr_sparse_aligned).interpolate(
-                method='linear').ffill().bfill()
-            sig_bpm_direct = hr_series.values
-
-            # ── Option B: re-estimate BPM from Signal_Value via Welch ─────────
+            # re-estimate BPM from Signal_Value via Welch
             sig_bpm_welch = _estimate_bpm(sig_bvp, FPS)
 
-            # ── Save outputs ──────────────────────────────────────────────────
+            # save outputs
             stem = f'attendant{num_attendant}_dist{dist}'
 
             # BVP (normalised, frame-aligned)
@@ -168,7 +167,6 @@ def main_gen_gtHR(dir_dataset):
 
 
 if __name__ == "__main__":
-    # Generate ground truth HR for UBFC-Phys.
-    dir_crt = os.getcwd()
-    dir_dataset = os.path.join(dir_crt,'data','custom')
+    dir_crt     = os.getcwd()
+    dir_dataset = os.path.join(dir_crt, 'data', 'custom')
     main_gen_gtHR(dir_dataset=dir_dataset)
