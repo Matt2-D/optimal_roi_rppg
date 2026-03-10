@@ -40,17 +40,17 @@ def main_gen_gtHR(dir_dataset):
     maxHz = 4.0   # Maximal frequency in Hz.
 
     # List of attendants.
-    list_attendant = list(range(1, 29)) + list(range(30, 55)) + [56]
+    list_attendant = [1]
     # List of conditions.
-    list_conition = [1, 2, 3]
+    distances = [1, 2, 3]
     # Loop over all attendants.
     for num_attendant in tqdm(list_attendant):
 
         # Loop over all conditions.
-        for num_condition in list_conition:
+        for dist in distances:
             # Ground truth BVP signal.
             dir_bvp = os.path.join(dir_dataset)
-            df_bvp = pd.read_csv(r"C:\Users\dowellm2\rPPG\optimal_roi_rppg-master\main\data\custom\Yuao1m\1\20251202_155614\Yuao-1m-1min-finger-ground-truth-data-1.csv", index_col=None)
+            df_bvp = pd.read_csv(r"C:\Users\dowellm2\rPPG\optimal_roi_rppg-master\main\data\custom\attendant1\1\20251202_155614\pulse_data.csv", index_col=None)
             sig_bvp = df_bvp.values
             # Calculate frames per second of the BVP signal.
             #dir_video = os.path.join(dir_dataset, 's'+str(num_attendant), 'vid_s'+str(num_attendant)+'_T'+str(num_condition)+'.avi')
@@ -88,6 +88,6 @@ if __name__ == "__main__":
     dir_crt = os.getcwd()
     #dir_option = os.path.join(dir_crt, 'config', 'options.yaml')
     #dir_dataset = yaml.safe_load(open(dir_option))['UBFC-Phys']['dir_dataset']
-    dir_option = r"C:\Users\dowellm2\rPPG\optimal_roi_rppg-master\main\data\custom\Yuao1m\1\20251202_155614\Yuao-1m-1min-finger-ground-truth-data-1.csv"
+    dir_option = r"C:\Users\dowellm2\rPPG\optimal_roi_rppg-master\main\data\custom\attendant1\1\20251202_155614\pulse_data.csv"
     dir_dataset = yaml.safe_load(open(dir_option))
     main_gen_gtHR(dir_dataset=dir_dataset)
