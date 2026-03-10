@@ -4,6 +4,8 @@ Extract raw RGB traces from facial videos.
 
 # Author: Shuo Li
 # Date: 2023/05/05
+# Editor: Matthew Dowell
+# Date: 03/10/2026
 
 import warnings
 warnings.filterwarnings("ignore")  # Ignore unnecessary warnings.
@@ -65,7 +67,7 @@ def main_vid2rgb(name_dataset):
             crop_stats = run_cropsense(
                 input_dir=raw_folder,
                 output_dir=cropped_folder,
-                croptype="upperbody",  # change to "upperbody"/"fullbody" if needed
+                croptype="face",  # change to "upperbody"/"fullbody" if needed
                 top_margin=0.2,
                 bottom_margin=0.2,
                 parallel=False,  # set to True to use multiprocessing

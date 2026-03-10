@@ -135,27 +135,34 @@ class BPM:
         if len(fft_of_interest) == 0:
             return np.nan
         #Fundemental peak
-        maxindex = np.argmax(fft_of_interest)
-        fundemental_freq = freqs_of_interest[maxindex]
+        max_index = np.argmax(fft_of_interest)
+        peak_bins = np.arange(max(0,max_index - 2), min(len(fft_of_interest),max_index+3))
+        fundamental_freq = freqs_of_interest[max_index]
 
-        #Harmonic peak
-        harmonic_freq = fundemental_freq * 2
-        harmonicindex = np.argmin(np.abs(freqs_of_interest - harmonic_freq))
-
-        #Signal = fundemental + harmonic
-        totalsignal = fft_of_interest[maxindex] + fft_of_interest[harmonicindex]
-
-        #Noise = everything else
         mask = np.ones_like(fft_of_interest, dtype=bool)
-        mask[[maxindex,harmonicindex]] = False
-        totalnoise = np.sum(fft_of_interest[mask])
+        mask[peak_bins] = False
 
-        snr_linear = totalsignal / totalnoise
+        harmonic_freq = fundamental_freq * 2
+
+        #Signal = fundamental + harmonic
+        total_signal = np.sum(fft_of_interest[peak_bins])
+
+        if harmonic_freq <= self.maxHz:
+            harmonic_index = np.argmin(np.abs(freqs_of_interest - harmonic_freq))
+            harmonic_bins = np.arange(max(0,harmonic_index - 2), min(len(fft_of_interest),harmonic_index+3))
+            harmonic_power = np.sum(fft_of_interest[harmonic_bins])
+            if harmonic_power > 0.1 * fft_of_interest[max_index]:
+                total_signal += harmonic_power
+                mask[harmonic_index] = False
+        #Noise = everything else
+        total_noise = np.sum(fft_of_interest[mask])
+
+        snr_linear = total_signal / total_noise
         snr_db = 10 * np.log10(snr_linear)
 
-        return snr_db
+        return snr_linear
 
-    def compute_snr_hr(self, bpm_estimate, band_hz=0.4):
+    def compute_snr_hr(self, bpm_estimate, band_hz=0.1):
         """
         HR-specific SNR.
         Higher SNR = better HR quality.
@@ -178,6 +185,11 @@ class BPM:
         if len(fft) == 0:
             return np.nan
 
+        #spectral_peak_hz = freqs[np.argmax(fft)]
+        #spectral_peak_bpm = spectral_peak_hz * 60
+        #if abs(spectral_peak_bpm - bpm_estimate) > 6: #6 bpm difference
+        #    return np.nan #unreliable
+
         # HR band
         hr_low = hr_hz - band_hz
         hr_high = hr_hz + band_hz
@@ -192,22 +204,39 @@ class BPM:
             hr_mask[nearest_idx] = True
 
         # Signal = power in HR band
-        signal_power = np.sum(fft[hr_mask])
+        total_signal = np.sum(fft[hr_mask])
+
+        # exclude the harmonic band from noise
+
+        harmonic_hz = hr_hz * 2
+        harmonic_mask = (freqs >= harmonic_hz - band_hz) & (freqs <= harmonic_hz + band_hz)
+
+        #only exclude if its within range
+        if harmonic_hz <= self.maxHz:
+            #check if it has meaningful power
+            harmonic_power_check = np.sum(fft[harmonic_mask])
+            if harmonic_power_check > 0.1 * total_signal:
+                noise_mask = ~hr_mask & ~harmonic_mask
+            else:
+                noise_mask = ~hr_mask
+        else:
+            noise_mask = ~hr_mask
+
 
         # Noise = power outside HR band
-        noise_power = np.sum(fft[~hr_mask])
+        total_noise = np.sum(fft[noise_mask])
 
         # Avoid divide-by-zero
-        if noise_power <= 0 or signal_power <= 0:
+        if total_noise <= 0 or total_signal <= 0:
             return np.nan
 
         # Linear SNR
-        snr_linear = signal_power / noise_power
+        snr_linear = total_signal / total_noise
 
         # Convert to dB
         snr_db = 10 * np.log10(snr_linear)
 
-        return snr_db
+        return snr_linear
 
 # Transform BVP signals into HR values.
 def BVP_to_BPM(bvps, fps, minHz=0.65, maxHz=4.):

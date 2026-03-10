@@ -53,7 +53,8 @@ def run_cropsense(
     ]
 
     if not input_files:
-        raise FileNotFoundError(f"No supported images found in: {input_dir}")
+        print(f"No images found in: {input_dir}")
+        #raise FileNotFoundError(f"No supported images found in: {input_dir}")
 
     print(f"[CropSense] {len(input_files)} images found in {input_dir}")
     print(f"[CropSense] Output → {output_dir}")
@@ -61,8 +62,8 @@ def run_cropsense(
     # single-threaded processing
     if not parallel:
         error_count = 0
-        progress = tqdm(input_files, desc="[CropSense] Cropping", dynamic_ncols=True)
-        for image_path in progress:
+        progress_bar = tqdm(input_files, desc="[CropSense] Cropping", dynamic_ncols=True)
+        for image_path in progress_bar:
             err = process_image(
                 image_path,
                 error_dir,

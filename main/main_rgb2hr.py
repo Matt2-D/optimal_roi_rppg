@@ -4,6 +4,8 @@ Transform raw RGB traces to BVP and HR signals.
 
 # Author: Shuo Li
 # Date: 2023/07/18
+# Editor: Matthew Dowell
+# Date: 03/10/2026
 
 import warnings
 warnings.filterwarnings("ignore")  # Ignore unnecessary warnings.
@@ -40,11 +42,12 @@ def main_rgb2hr(name_dataset, algorithm):
     # RGB signal -> bvp signal.
     if name_dataset == 'custom':
         # Sequence num of attendants.
-        list_attendant = [1] #manually insert
+        attendant_id = 1
+        distances = [1, 2, 3]
         # Loop over all attendants.
-        for num_attendant in tqdm(list_attendant):
+        for dist in distances:
             # Parse the RGB signal from the RGB dataframe. Size = [num_frames, num_ROI, rgb_channels(3)].
-            dir_sig_rgb = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(num_attendant) + '.csv')
+            dir_sig_rgb = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(dist) + '.csv')
             df_rgb = pd.read_csv(dir_sig_rgb)
             # RGB signal initialization.
             sig_rgb = np.zeros([df_rgb['frame'].max(), len(np.unique(df_rgb['ROI'].values)), 3])
@@ -73,7 +76,7 @@ def main_rgb2hr(name_dataset, algorithm):
                 df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'SNR'] = sig_snr[:, i_roi]  # SNR score.
             # Data saving.
             dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'hr',
-                                         str(num_attendant) + '_' + algorithm + '1.csv')
+                                         str(dist) + '_' + algorithm + '1.csv')
             df_hr.to_csv(dir_save_data, index=False)
 
     if name_dataset == '!UBFC-rPPG':

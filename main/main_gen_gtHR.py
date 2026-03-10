@@ -4,6 +4,8 @@ Generate ground truth BPM data using existing BVP data for UBFC-Phys dataset.
 
 # Author: Shuo Li
 # Date: 2023/08/18
+# Editor: Matthew Dowell
+# Date: 03/10/2026
 
 import warnings
 warnings.filterwarnings("ignore")  # Ignore unnecessary warnings.

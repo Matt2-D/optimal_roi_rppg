@@ -381,6 +381,19 @@ class FaceDetector():
         return img_draw
 
 def frames_to_sig(frame_folder, Params):
+    """Transform the input frames into RGB signals.
+       Return the signals as pandas dataframe.
+
+    Parameters
+    ----------
+    frame_folder: Directory of the raw input frames.
+    Params: A class containing the pre-defined parameters for the preliminary analysis.
+
+    Returns
+    -------
+    df_rgb: Dataframe containing the RGB signal of the input video.
+    num_nan: Number of nan values of the extracted RGB signal.
+        """
     counter = 0
     # Create the face detection object.
     Detector_crt = FaceDetector(Params=Params)
@@ -390,6 +403,7 @@ def frames_to_sig(frame_folder, Params):
     num_frame = 0
     # grabbing frames instead of .avi video
     frame_files = sorted(os.listdir(frame_folder))
+    progress_bar = tqdm(frame_files, desc="[optimal_roi] Mapping", dynamic_ncols=True)
     for f in frame_files:
         counter += 1
         if counter > 500:
@@ -405,7 +419,8 @@ def frames_to_sig(frame_folder, Params):
         loc_landmark = Detector_crt.extract_landmark(img=img_frame)  # Size = [468, 3]
         # Extract RGB signal.
 
-        print(counter, "frames out of 4000")
+        progress_bar.update(1)
+        #print(counter, "frames out of 4000")
         sig_rgb = Detector_crt.extract_RGB(img=img_frame, loc_landmark=loc_landmark)  # Size = [num_roi, 3].
         # Loop over all ROIs and save the RGB data.
         df_rgb_tmp = pd.DataFrame(columns=['frame', 'time', 'ROI', 'R', 'G', 'B'],
@@ -588,20 +603,8 @@ def rppg_hr_pipe(sig_rgb, method, Params):
     sig_bvp: Blood volume pulse (BVP) signal of different ROI without windowing. Size=[num_frames, num_ROI].
     sig_bpm: Beats per minute (BPM) signal of different ROI. Size=[num_frames, num_ROI].
     """
-    print(sig_rgb)
-    print(len(sig_rgb))
-    print("number of frames:", sig_rgb.shape[0])
-    print("")
     # RGB signal -> windowed RGB signal.
     sig_rgb_win, timeES = sig_to_windowed(sig_rgb=sig_rgb, Params=Params)
-    print("Sig_rgb_win:",sig_rgb_win)
-    print("Params window size:", Params.len_window)
-    print("Params window stride:", Params.stride_window)
-    print("Params ROI number", Params.list_roi_num)
-    print("Params ROI name", Params.list_roi_name)
-    print("Params directory", Params.dir_dataset)
-    print("Params minimum tracking condition", Params.minTrackingCon)
-    print("Params minimum detection condition", Params.minDetectionCon)
     # Windowed RGB signal -> windowed raw bvp signal.
     sig_bvp_win = sig_windowed_to_bvp(sig_rgb_win=sig_rgb_win, method=method, Params=Params)
 
@@ -620,6 +623,7 @@ def rppg_hr_pipe(sig_rgb, method, Params):
             else:
                 sig_bvp_win_filtered[i] = sig_bvp_win_filtered[i - 1]
 
+    sig_bvp = 0 #base case
     # --- 4. De-window BVP back to full-length ---
     for i in range(len(sig_bvp_win_filtered)):
         if i == 0:
@@ -629,6 +633,11 @@ def rppg_hr_pipe(sig_rgb, method, Params):
                 (sig_bvp, sig_bvp_win_filtered[i][:, :round(Params.fps * Params.stride_window)]),
                 axis=1
             )
+    print("sig_rgb shape:", getattr(sig_rgb, "shape", None))
+    N = sig_rgb.shape[0]
+    win = round(Params.fps * Params.len_window)
+    hop = max(1, round(Params.fps * Params.stride_window))
+    print(f"N frames={N}, win={win} samples, hop={hop} samples, fps={Params.fps}")
 
     # Add last partial window
     sig_bvp = np.concatenate(
@@ -655,7 +664,7 @@ def rppg_hr_pipe(sig_rgb, method, Params):
             )
 
             bpm_val = bpm_obj.BVP_to_BPM()  # already in BPM
-            snr_val = bpm_obj.compute_snr_hr(bpm_val)
+            snr_val = bpm_obj.compute_snr()#compute_snr_hr(bpm_val)
 
             multi_sig_bpm[w, r] = bpm_val
             multi_sig_snr[w, r] = snr_val

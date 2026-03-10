@@ -321,7 +321,8 @@ def draw_rectangle(endX,
     # Calculate the thickness of the rectangle based on the image resolution
     resolution_thickness_ratio = image.shape[1] // 128
     thickness = max(resolution_thickness_ratio, 5)
-
+    #commented out debug section to not waste storage
+'''
     debug_image = image.copy()
 
     cv2.rectangle(debug_image, (startX, startY), (endX, endY), (0, 0, 255), thickness) #face rectangle
@@ -394,7 +395,7 @@ def draw_rectangle(endX,
     if show_preview == True:
         preview(debug_image, resized_image, preview_output_res, preview_debug_max_res, is_error)
     return is_error
-
+'''
 def preview(debug_image,
             resized_image,
             preview_output_res,
