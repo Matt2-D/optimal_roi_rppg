@@ -1,12 +1,11 @@
-#creates a 29th synthetic ROI from the 6 best predetermined ROIs, weighted by their individual SNR (spectral, via compute_snr logic).
-
+#creates a 29th synthetic ROI from the 6 best predetermined ROIs, weighted by their individual SNR
+#creates a 30th synthetic ROI from the 6 best predetermined ROI's, unweighted
 #For each distance CSV (e.g. data/custom/rgb/1.csv), this script:
   #1. Extracts the 6 target ROI time-series
   #2. Computes per-ROI SNR using Welch PSD (same method as compute_snr)
   #3. Normalizes SNR weights (negatives clamped to 0)
   #4. Produces a weighted-average R, G, B per frame
   #5. Writes a new CSV alongside the source (e.g. 1_roi29.csv)
-#
 
 import os
 import numpy as np
@@ -14,9 +13,7 @@ import pandas as pd
 from scipy.signal import welch
 
 
-# ── Configuration ─────────────────────────────────────────────────────────────
-
-# The 6 predetermined best ROIs (must match ROI column strings exactly)
+# The 6 predetermined best ROIs
 TARGET_ROIS = [
     "glabella",
     "lower medial forehead",
@@ -27,6 +24,7 @@ TARGET_ROIS = [
 ]
 
 ROI29_NAME = "snr_weighted_composite"
+ROI30_NAME = "simple_composite"
 
 # Physiological rPPG frequency range
 MIN_HZ = 0.7
@@ -36,14 +34,8 @@ MAX_HZ = 2.5
 NFFT = 4096
 
 
-# ── SNR helper (mirrors compute_snr logic, operates on a 1-D numpy array) ────
+def compute_snr2(signal: np.ndarray, fps: float) -> float:
 
-def _compute_snr(signal: np.ndarray, fps: float) -> float:
-    """
-    Spectral SNR for a 1-D RGB channel signal.
-    Mirrors the compute_snr method: fundamental ±2 bins + conditional harmonic.
-    Returns -inf if computation fails (so weight clamps to 0).
-    """
     signal = signal - np.mean(signal)           # remove DC
     if np.all(signal == 0):
         return -np.inf
@@ -92,19 +84,13 @@ def _compute_snr(signal: np.ndarray, fps: float) -> float:
 
 
 def _channel_snr(roi_df: pd.DataFrame, fps: float) -> float:
-    """
-    Average SNR across R, G, B channels for one ROI.
-    Green channel typically dominates in rPPG but all three are included.
-    """
+    # Average SNR across R, G, B channels for one ROI.
     snrs = []
     for ch in ["R", "G", "B"]:
-        s = _compute_snr(roi_df[ch].values.astype(np.float64), fps)
+        s = compute_snr2(roi_df[ch].values.astype(np.float64), fps)
         if np.isfinite(s):
             snrs.append(s)
     return float(np.mean(snrs)) if snrs else -np.inf
-
-
-# ── Main builder ──────────────────────────────────────────────────────────────
 
 def build_roi29(
     csv_path: str,
@@ -128,9 +114,9 @@ def build_roi29(
 
     frames = sorted(df["frame"].unique())
 
-    # ── Step 1: extract per-ROI full time-series and compute SNR ─────────────
-    roi_data   = {}   # roi_name → DataFrame (indexed by frame, sorted)
-    roi_snr    = {}   # roi_name → float SNR
+    # extract per-ROI full time-series and compute SNR
+    roi_data   = {}   # roi_name - DataFrame (indexed by frame, sorted)
+    roi_snr    = {}   # roi_name - float SNR
 
     for roi in TARGET_ROIS:
         roi_df = df[df["ROI"] == roi].sort_values("frame").reset_index(drop=True)
@@ -139,15 +125,15 @@ def build_roi29(
         roi_snr[roi] = snr
         print(f"  [{roi:35s}]  SNR = {snr:+.2f} dB")
 
-    # ── Step 2: compute normalized weights (clamp negatives to 0) ────────────
+    # normalized weights
     snr_values = np.array([roi_snr[r] for r in TARGET_ROIS])
 
-    # Shift so minimum finite value → 0, then clamp
+    # Shift so minimum finite value
     finite_mask = np.isfinite(snr_values)
     if not np.any(finite_mask):
         raise RuntimeError("All 6 ROIs returned non-finite SNR. Cannot build ROI 29.")
 
-    # Linear SNR for weighting (convert from dB)
+    # Linear SNR for weighting
     linear_snr = np.where(finite_mask, 10 ** (snr_values / 10), 0.0)
     linear_snr = np.clip(linear_snr, 0, None)
 
@@ -161,7 +147,7 @@ def build_roi29(
     for roi, w in zip(TARGET_ROIS, weights):
         print(f"  [{roi:35s}]  weight = {w:.4f}")
 
-    # ── Step 3: weighted average R, G, B per frame ────────────────────────────
+    # weighted average R, G, B per frame
     records = []
     for frame in frames:
         # Get time for this frame from any ROI
@@ -193,7 +179,6 @@ def build_roi29(
 
     roi29_df = pd.DataFrame(records, columns=["frame", "time", "ROI", "R", "G", "B"])
 
-    # ── Step 4: write output ──────────────────────────────────────────────────
     if output_path is None:
         stem = os.path.splitext(csv_path)[0]
         output_path = f"{stem}_roi29.csv"
@@ -203,13 +188,10 @@ def build_roi29(
 
     return roi29_df
 
-
-# ── Pipeline entry point ──────────────────────────────────────────────────────
-
 def main_combine_roi29(
     name_dataset: str = "custom",
     attendant_id: int = 1,
-    distances: list[int] = None,
+        distances: list = None,
     fps: float = 50.0,
 ):
     if distances is None:
