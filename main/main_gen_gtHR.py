@@ -51,7 +51,7 @@ def _estimate_bpm(sig_bvp: np.ndarray, fps: float) -> np.ndarray:
         )
         Pmax = np.argmax(Power, axis=1)
         centre_idx = int(0.5 * (2 * idx_crt + len_window_frame - 1))
-        sig_bpm[centre_idx] = Pfreqs[Pmax.squeeze()] * 60.0   # Hz → BPM
+        sig_bpm[centre_idx] = float(Pfreqs.squeeze()[Pmax.squeeze()]) * 60.0   # Hz → BPM
 
         idx_crt += stride_window_frame
 
@@ -132,7 +132,7 @@ def main_gen_gtHR(dir_dataset):
             hr_sparse = df_gt['HR'].values.astype(np.float64)
             src_idx = np.linspace(0, 1, len(hr_sparse))
             tgt_idx = np.linspace(0, 1, NUM_FRAMES)
-            hr_sparse_aligned = interp1d(hr_sparse, sig_bvp_raw, kind='linear')(tgt_idx)
+            hr_sparse_aligned = interp1d(src_idx, hr_sparse, kind='linear')(tgt_idx)
 
             # Replace zeros with NaN then interpolate
             hr_sparse_aligned[hr_sparse_aligned == 0] = np.nan
