@@ -31,7 +31,7 @@ FPS            = 50
 NUM_FRAMES     = 3000   # Video frame count
 
 
-def _load_gt_csv(csv_path: str) -> pd.DataFrame:
+def load_gt_csv(csv_path: str) -> pd.DataFrame:
     # Load and validate the ground truth CSV
     if not os.path.isfile(csv_path):
         raise FileNotFoundError(f"Ground truth CSV not found: {csv_path}")
@@ -43,7 +43,7 @@ def _load_gt_csv(csv_path: str) -> pd.DataFrame:
     return df
 
 
-def _align_to_frames(signal: np.ndarray, target_len: int) -> np.ndarray:
+def align_to_frames(signal: np.ndarray, target_len: int) -> np.ndarray:
     #Resample signal to target_len frames
     src_idx = np.linspace(0, 1, len(signal))
     tgt_idx = np.linspace(0, 1, target_len)
@@ -101,14 +101,14 @@ def main_gen_gtHR(dir_dataset: str) -> None:
             sig_bvp_raw = sig_bvp_raw - np.mean(sig_bvp_raw)
 
             # Resample from 2987 → 3000 frames
-            sig_bvp = _align_to_frames(sig_bvp_raw, NUM_FRAMES)
+            sig_bvp = align_to_frames(sig_bvp_raw, NUM_FRAMES)
 
             # Remove zeros BEFORE resampling to avoid smearing zeros into signal.
             hr_sparse = df_gt['HR'].values.astype(np.float64)
             hr_sparse[hr_sparse == 0] = np.nan
             hr_filled = pd.Series(hr_sparse).interpolate(
                 method='linear').ffill().bfill().values
-            sig_bpm_direct = _align_to_frames(hr_filled, NUM_FRAMES)
+            sig_bpm_direct = align_to_frames(hr_filled, NUM_FRAMES)
 
             # save outputs
             stem = f'attendant{num_attendant}_dist{dist}'

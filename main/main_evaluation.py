@@ -14,6 +14,7 @@ import pandas as pd
 dir_crt = os.getcwd()
 sys.path.append(os.path.join(dir_crt, 'util'))
 from util import util_analysis
+import main_gen_gtHR as gt
 
 
 def main_eval(name_dataset='custom', algorithm='CHROM'):
@@ -38,33 +39,76 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
     # Structures for different datasets.
     if name_dataset == "custom": #custom dataset
         list_attendant = [1]
-        # Dataframe initialization.
-        df_eval = pd.DataFrame(columns=['attendant', 'ROI', 'DTW', 'PCC', 'CCC', 'RMSE', 'MAE', 'MAPE'])
-        # Loop over all data points.
-        num_attendant = 1
-        print([name_dataset, algorithm, num_attendant])
-        # Load BVP and HR signals.
-        dir_hr = os.path.join(dir_crt, 'data', name_dataset, 'hr', str(num_attendant) + '_' + algorithm + '1.csv')
-        df_hr = pd.read_csv(dir_hr, index_col=0)
-        # Load ground truth.
-        gtTime, gtTrace, gtHR = GT.get_GT(specification=['realistic', num_attendant],
-                                              num_frame_interp=int(len(df_hr) / len(Params.list_roi_name)),
-                                              slice=[0, 1])
-        print("gtTime:",gtTime,"gtTrace:",gtTrace,"gtHR:",gtHR)
-        # Initialization of BVP and BPM arrays.
-        sig_bvp = np.zeros(shape=[int(len(df_hr) / len(Params.list_roi_name)), len(Params.list_roi_name)])
-        sig_bpm = np.zeros(shape=[int(len(df_hr) / len(Params.list_roi_name)), len(Params.list_roi_name)])
-        for i_roi in range(len(Params.list_roi_name)):
-            sig_bvp[:, i_roi] = df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BVP']
-            sig_bpm[:, i_roi] = df_hr.loc[df_hr['ROI'].values == Params.list_roi_name[i_roi], 'BPM']
-        # Metrics calculation.
-        df_metric = util_analysis.eval_pipe(sig_bvp, sig_bpm, gtTime, gtTrace, gtHR, Params)
-        df_eval = pd.concat([df_eval, df_metric])
-        df_eval.reset_index(drop=True, inplace=True)
-        df_eval.loc[len(df_eval) - len(Params.list_roi_name):, 'attendant'] = num_attendant
+        distances = [1, 2, 3]
 
-        # Dataframe saving.
-        df_eval.to_csv(os.path.join(dir_crt, 'result', name_dataset, 'evaluation_' + algorithm + '1.csv'))
+        df_eval = pd.DataFrame(
+            columns=['attendant', 'distance', 'ROI',
+                     'DTW', 'PCC', 'CCC', 'RMSE', 'MAE', 'MAPE']
+        )
+
+        for num_attendant in list_attendant:
+            for dist in distances:
+                print(f"\n{'=' * 60}")
+                print(f"[Eval] {name_dataset} | {algorithm} | "
+                      f"attendant{num_attendant} | dist{dist}")
+                print(f"{'=' * 60}")
+
+                # Load HR CSV
+                dir_hr = os.path.join(
+                    dir_crt, 'data', name_dataset, 'hr',
+                    f'{dist}_{algorithm}1.csv'
+                )
+                if not os.path.isfile(dir_hr):
+                    print(f"  [WARN] HR CSV not found, skipping: {dir_hr}")
+                    continue
+
+                # index_col=False preserves all columns including 'frame'
+                df_hr = pd.read_csv(dir_hr, index_col=False)
+
+                # ── Derive ROI list from CSV (picks up ROIs 29 & 30) ─────────
+                roi_names = list(df_hr['ROI'].unique())
+                num_rois = len(roi_names)
+                num_frames = df_hr['frame'].nunique()
+
+                print(f"  ROIs found: {num_rois}  |  Frames: {num_frames}")
+
+                # Load ground truth
+                gtBVP, gtBPM = gt.load_gt_csv(dir_crt, num_attendant, dist, num_frames)
+
+                #Build BVP / BPM arrays [frames x ROIs]
+                sig_bvp = np.zeros([num_frames, num_rois])
+                sig_bpm = np.zeros([num_frames, num_rois])
+
+                for i_roi, roi_name in enumerate(roi_names):
+                    mask = df_hr['ROI'].values == roi_name
+                    bvp_vals = df_hr.loc[mask, 'BVP'].values
+                    bpm_vals = df_hr.loc[mask, 'BPM'].values
+
+                    # Guard against length mismatch
+                    n = min(num_frames, len(bvp_vals))
+                    sig_bvp[:n, i_roi] = bvp_vals[:n]
+                    sig_bpm[:n, i_roi] = bpm_vals[:n]
+
+                # Metrics per ROI
+                # Pass roi_names so eval_pipe can label rows correctly
+                df_metric = util_analysis.eval_pipe(
+                    sig_bvp, sig_bpm,
+                    gtBVP, gtBPM,
+                    Params,
+                    roi_names=roi_names
+                )
+
+                df_metric['attendant'] = num_attendant
+                df_metric['distance'] = dist
+                df_eval = pd.concat([df_eval, df_metric], ignore_index=True)
+
+        # Save results
+        result_dir = os.path.join(dir_crt, 'result', name_dataset)
+        os.makedirs(result_dir, exist_ok=True)
+        out_path = os.path.join(result_dir, f'evaluation_{algorithm}1.csv')
+        df_eval.to_csv(out_path, index=False)
+        print(f"\n[Eval] Results saved → {out_path}")
+        print(df_eval.to_string())
 
     elif name_dataset == '!UBFC-rPPG':  # UBFC-rPPG dataset.
         list_attendant = [1] + list(range(3, 6)) + list(range(8, 19)) + [20] + \
