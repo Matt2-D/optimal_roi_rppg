@@ -715,167 +715,115 @@ def rppg_hr_pipe(sig_rgb, method, Params):
     return sig_bvp, sig_bpm, sig_snr
 
 
-def eval_pipe(sig_bvp, sig_bpm, gtTime, gtTrace, gtHR, Params):
+def eval_pipe(sig_bvp, sig_bpm, gtTrace, gtHR, Params, roi_names=None):
     """The complete pipeline for rPPG algorithm evaluation.
-       This evaluation is based on BVP & BPM signals.
-       The selected metrics are: [PCC, CCC, RMSE, MAE, DTW].
 
     Parameters
     ----------
-    sig_bvp: BVP signal of different ROIs after de-windowing. Size=[num_frames, num_ROI].
-    sig_bpm: BPM signal of different ROI. Size=[num_frames, num_ROI].
-    gtTime: Ground truth time in numpy array. Size = [num_frames].
-    gtTrace: Ground truth PPG waveform data in numpy array. Size = [num_frames].
-    gtHR: Ground truth HR data in numpy array. Size = [num_frames].
-    Params: A class containing the pre-defined parameters for the preliminary analysis.
-
-    Returns
-    -------
-    list_DTW: DTW metric. Size = [num_roi].
-    list_PCC = Pearson's Correlation Coefficient (PCC). Size = [num_roi].
-    list_CCC = Concordance Correlation Coefficient (CCC). Size = [num_roi].
-    list_RMSE = Root Mean Square Error (RMSE). Size = [num_roi].
-    list_MAE = Mean Absolute Error (MAE). Size = [num_roi].
+    sig_bvp     : BVP signal. Size=[num_frames, num_ROI].
+    sig_bpm     : BPM signal. Size=[num_frames, num_ROI].
+    gtTrace     : Ground truth PPG waveform. Size=[num_frames].
+    gtHR        : Ground truth HR (BPM). Size=[num_frames].
+    Params      : Pre-defined parameters class.
+    roi_names   : Optional list of ROI name strings. If None, falls back
+                  to Params.list_roi_name (28 ROIs only).
     """
 
-    # Metrics initialization of different ROIs.
-    list_DTW = np.zeros(len(Params.list_roi_name))
-    list_PCC = np.zeros(len(Params.list_roi_name))
-    list_CCC = np.zeros(len(Params.list_roi_name))
-    list_RMSE = np.zeros(len(Params.list_roi_name))
-    list_MAE = np.zeros(len(Params.list_roi_name))
-    list_MAPE = np.zeros(len(Params.list_roi_name))
-    # Process different ROI respectively.
-    for i in tqdm(range(len(sig_bpm[0, :]))):
-        # BVP signal of each ROI.
-        sig_bvp_crt = sig_bvp[:, i]
-        # BPM signal of each ROI.
-        sig_bpm_crt = sig_bpm[:, i]
-        # Windowing. This process helps stabilize the evaluation results. Len_win = 10s.
-        # --- derive sampling from gtTime (ms) and set window/hop in samples ---
-        t = gtTime.astype("float64")
-        t = t[np.isfinite(t)]
-        if t.size < 2:
-            raise ValueError("gtTime must contain at least 2 finite values.")
+    # Use dynamic ROI list if provided, else fall back to Params
+    if roi_names is None:
+        roi_names = Params.list_roi_name
+    num_rois = len(roi_names)
 
-        dt = np.diff(t)
-        dt = dt[dt > 0]
-        if dt.size == 0:
-            raise ValueError("gtTime has no positive time increments (duplicates or non-monotonic).")
+    # Metric arrays sized to actual number of ROIs
+    list_DTW  = np.zeros(num_rois)
+    list_PCC  = np.zeros(num_rois)
+    list_CCC  = np.zeros(num_rois)
+    list_RMSE = np.zeros(num_rois)
+    list_MAE  = np.zeros(num_rois)
+    list_MAPE = np.zeros(num_rois)
 
-        dt_ms = float(np.median(dt))  # median timestep in ms
-        fs = 1000.0 / dt_ms  # Hz (samples per second)
+    # Window parameters — derived from FPS via Params
+    fs          = Params.fps
+    win_samples = int(10.0 * fs)   # 10s window
+    hop_samples = win_samples      # non-overlapping
 
-        win_seconds = 10.0
-        win_samples = int(max(1, round(win_seconds * fs)))
-        hop_samples = win_samples  # change if you want overlap, e.g., int(win_samples // 2)
+    N = min(len(gtTrace), len(gtHR), sig_bvp.shape[0], sig_bpm.shape[0])
+    gtTrace = gtTrace[:N]
+    gtHR    = gtHR[:N]
 
-        # --- inside your ROI loop ---
-        for i in tqdm(range(sig_bpm.shape[1])):
-            sig_bvp_crt = sig_bvp[:, i]
-            sig_bpm_crt = sig_bpm[:, i]
+    if N < win_samples:
+        raise ValueError(
+            f"Not enough frames for a 10s window: N={N}, need {win_samples}. "
+            "Reduce window size or check inputs."
+        )
 
-            # Make all sequences the same usable length
-            N = min(len(gtTrace), len(sig_bvp_crt), len(sig_bpm_crt), len(gtHR) if gtHR is not None else len(gtTrace))
-            gtTrace_use = gtTrace[:N]
-            gtHR_use = gtHR[:N] if gtHR is not None else None
-            sig_bvp_use = sig_bvp_crt[:N]
-            sig_bpm_use = sig_bpm_crt[:N]
+    num_win = len(range(0, N - win_samples + 1, hop_samples))
 
-            if N < win_samples:
-                raise ValueError(
-                    f"Not enough samples for a {win_seconds}s window: N={N}, win_samples={win_samples}. "
-                    "Reduce window size or check your inputs."
-                )
+    # Single ROI loop — no double loop
+    for i in tqdm(range(num_rois)):
+        sig_bvp_crt = sig_bvp[:N, i]
+        sig_bpm_crt = sig_bpm[:N, i]
 
-            for slice_start in range(0, N - win_samples + 1, hop_samples):
-                slice_end = slice_start + win_samples
+        for slice_start in range(0, N - win_samples + 1, hop_samples):
+            slice_end = slice_start + win_samples
 
-                gtTrace_crt = gtTrace_use[slice_start:slice_end]
-                gtHR_crt = gtHR_use[slice_start:slice_end] if gtHR_use is not None else None
-                sig_rppg_crt_slice = sig_bvp_use[slice_start:slice_end]
-                sig_bpm_crt_slice = sig_bpm_use[slice_start:slice_end]
+            gtTrace_slice = gtTrace[slice_start:slice_end]
+            gtHR_slice    = gtHR[slice_start:slice_end]
+            bvp_slice     = sig_bvp_crt[slice_start:slice_end]
+            bpm_slice     = sig_bpm_crt[slice_start:slice_end]
 
-                # --- guards against empty/all-NaN slices ---
-                if sig_rppg_crt_slice.size == 0:
-                    # nothing to do for this slice
+            # Normalize gtTrace slice
+            gt_min, gt_max = np.min(gtTrace_slice), np.max(gtTrace_slice)
+            gt_denom = gt_max - gt_min
+            if gt_denom > 0:
+                gtTrace_norm = (gtTrace_slice - gt_min) / gt_denom
+            else:
+                continue  # flat GT slice — skip
+
+            # Normalize BVP slice
+            finite_mask = np.isfinite(bvp_slice)
+            if finite_mask.sum() == 0:
+                continue
+            x = bvp_slice[finite_mask]
+            x_min, x_max = np.nanmin(x), np.nanmax(x)
+            denom = x_max - x_min
+            if np.isfinite(denom) and denom > 0:
+                bvp_norm = bvp_slice.copy()
+                bvp_norm[finite_mask] = (x - x_min) / (denom + 1e-12)
+            else:
+                x_std = np.nanstd(x)
+                if x_std == 0:
                     continue
+                bvp_norm = bvp_slice.copy()
+                bvp_norm[finite_mask] = (x - np.nanmean(x)) / x_std
 
-                # If you have NaNs, normalize only finite values
-                finite_mask = np.isfinite(sig_rppg_crt_slice)
-                if finite_mask.sum() == 0:
-                    # slice has no finite samples to normalize
-                    continue
+            # Metrics
+            list_DTW[i]  += dtw.distance(gtTrace_norm, bvp_norm)
+            list_PCC[i]  += np.abs(np.corrcoef(gtTrace_norm, bvp_norm)[0, 1])
+            list_CCC[i]  += np.abs(util_pyVHR.concordance_correlation_coefficient(
+                                bpm_true=gtTrace_norm, bpm_pred=bvp_norm))
+            list_RMSE[i] += safe_rmse(gtHR_slice, bpm_slice)
+            list_MAE[i]  += safe_mae(gtHR_slice, bpm_slice)
+            list_MAPE[i] += safe_mape(gtHR_slice, bpm_slice)
 
-                x = sig_rppg_crt_slice[finite_mask]
-                # Use nanmin/nanmax to be robust if x could still contain NaN (it shouldn’t after mask)
-                xmin = np.nanmin(x)
-                xmax = np.nanmax(x)
-                denom = xmax - xmin
+    # Average over windows
+    list_DTW  /= num_win
+    list_PCC  /= num_win
+    list_CCC  /= num_win
+    list_RMSE /= num_win
+    list_MAE  /= num_win
+    list_MAPE /= num_win
 
-                if not np.isfinite(denom) or denom == 0:
-                    # constant slice or invalid range; either skip or use an alternative normalization
-                    # Option A: skip this slice
-                    # continue
-
-                    # Option B (fallback): z-score normalization if std > 0
-                    x_mean = np.nanmean(x)
-                    x_std = np.nanstd(x)
-                    if not np.isfinite(x_std) or x_std == 0:
-                        # still no variance; skip
-                        continue
-                    x_norm = (x - x_mean) / x_std
-                else:
-                    # stable min-max normalization with tiny epsilon in denominator
-                    eps = 1e-12
-                    x_norm = (x - xmin) / (denom + eps)
-
-                # write back normalized finite values; keep non-finite as-is
-                sig_rppg_norm = sig_rppg_crt_slice.copy()
-                sig_rppg_norm[finite_mask] = x_norm
-
-                # ---- continue with your evaluation using:
-                # gtTrace_crt, gtHR_crt, sig_rppg_norm, sig_bpm_crt_slice
-                # e.g., compute metrics on this window ...
-                gtTrace_crt = (gtTrace_crt-np.min(gtTrace_crt))/(np.max(gtTrace_crt)-np.min(gtTrace_crt))
-                # DTW.
-                dist_dtw = dtw.distance(gtTrace_crt, sig_rppg_crt_slice)
-                # PCC.
-                PCC = np.abs(np.corrcoef(gtTrace_crt, sig_rppg_crt_slice)[0, 1])
-                # CCC.
-                CCC = np.abs(
-                    util_pyVHR.concordance_correlation_coefficient(bpm_true=gtTrace_crt, bpm_pred=sig_rppg_crt_slice))
-                # RMSE.
-                RMSE = safe_rmse(gtHR_crt, sig_bpm_crt_slice)
-                # MAE.
-                MAE  = safe_mae(gtHR_crt, sig_bpm_crt_slice)
-                # MAPE.
-                MAPE = safe_mape(gtHR_crt, sig_bpm_crt_slice)
-
-                list_DTW[i] = list_DTW[i] + dist_dtw
-                list_PCC[i] = list_PCC[i] + PCC
-                list_CCC[i] = list_CCC[i] + CCC
-                list_RMSE[i] = list_RMSE[i] + RMSE
-                list_MAE[i] = list_MAE[i] + MAE
-                list_MAPE[i] = list_MAPE[i] + MAPE
-
-    # Averaging.
-    num_win = len(np.arange(0, len(gtTrace), hop_samples))
-    list_DTW = list_DTW/num_win
-    list_PCC = list_PCC/num_win
-    list_CCC = list_CCC/num_win
-    list_RMSE = list_RMSE/num_win
-    list_MAE = list_MAE/num_win
-    list_MAPE = list_MAPE/num_win
-    # Dataframe initialization.
-    df_metric = pd.DataFrame(columns=['ROI', 'DTW', 'PCC', 'CCC', 'RMSE', 'MAE'])
-    df_metric.loc[:, 'ROI'] = Params.list_roi_name
-    df_metric.loc[:, 'DTW'] = list_DTW
-    df_metric.loc[:, 'PCC'] = list_PCC
-    df_metric.loc[:, 'CCC'] = list_CCC
-    df_metric.loc[:, 'RMSE'] = list_RMSE
-    df_metric.loc[:, 'MAE'] = list_MAE
-    df_metric.loc[:, 'MAPE'] = list_MAPE
+    # Build output DataFrame with dynamic ROI names
+    df_metric = pd.DataFrame({
+        'ROI':  roi_names,
+        'DTW':  list_DTW,
+        'PCC':  list_PCC,
+        'CCC':  list_CCC,
+        'RMSE': list_RMSE,
+        'MAE':  list_MAE,
+        'MAPE': list_MAPE,
+    })
 
     return df_metric
 
