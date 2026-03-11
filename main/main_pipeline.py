@@ -71,7 +71,7 @@ def stage_rgb2hr():
 def stage_gen_gthr():
     from main_gen_gtHR import main_gen_gtHR
     dir_dataset = os.path.join(dir_crt, 'data', NAME_DATASET)
-    main_gen_gtHR(dir_dataset=dir_dataset)
+    main_gen_gtHR(dir_dataset=dir_dataset,name_dataset=NAME_DATASET)
 
 
 def stage_evaluation():
