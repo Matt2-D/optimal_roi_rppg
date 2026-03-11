@@ -67,7 +67,7 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
     # Structures for different datasets.
     if name_dataset == "custom": #custom dataset
         list_attendant = [1]
-        distances = [1, 2, 3]
+        distances = [1, 2]
 
         df_eval = pd.DataFrame(
             columns=['attendant', 'distance', 'ROI',
