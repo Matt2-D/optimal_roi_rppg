@@ -7,7 +7,8 @@ GitHub link of pyVHR: https://github.com/phuselab/pyVHR.
 
 # Author: Shuo Li
 # Email: shuoli199909@outlook.com
-# Date: 2025/01/15
+# Editor: Matthew Dowell
+# Date: 03/10/2026
 
 
 import cv2

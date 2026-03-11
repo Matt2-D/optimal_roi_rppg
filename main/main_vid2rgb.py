@@ -2,7 +2,7 @@
 Extract raw RGB traces from facial videos.
 """
 
-# Author: Shuo Li
+# Original Author: Shuo Li
 # Date: 2023/05/05
 # Editor: Matthew Dowell
 # Date: 03/10/2026

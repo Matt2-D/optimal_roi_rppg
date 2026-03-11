@@ -2,7 +2,7 @@
 Transform raw RGB traces to BVP and HR signals.
 """
 
-# Author: Shuo Li
+# Original Author: Shuo Li
 # Date: 2023/07/18
 # Editor: Matthew Dowell
 # Date: 03/10/2026

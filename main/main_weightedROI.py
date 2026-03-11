@@ -7,6 +7,8 @@
   #4. Produces a weighted-average R, G, B per frame
   #5. overwrites the RGB CSV to include the two new ROI's
 
+# Author: Matthew Dowell
+# Date 3/10/2026
 import os
 import shutil
 

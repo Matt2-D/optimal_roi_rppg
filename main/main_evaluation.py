@@ -2,7 +2,7 @@
 Performance evaluation of different rPPG methods.
 """
 
-# Author: Shuo Li
+# Original Author: Shuo Li
 # Date: 2023/08/05
 # Editor: Matthew Dowell
 # Date: 03/10/2026
