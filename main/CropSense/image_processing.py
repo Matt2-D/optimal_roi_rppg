@@ -61,7 +61,7 @@ def process_image(image_path,
 
                 width = endX - startX
                 height = endY - startY
-                if confidence < 0.4: #variable.confidence_level:
+                if confidence < 0.3: #variable.confidence_level:
                     print(f"\rConfidence level too low ({int(confidence * 100)}%), skipping face_{i} on {filename}{extension}")
                     error_msg = "CONFIDENCE LEVEL TOO LOW"
                     images_error(image_path, error_folder)
@@ -89,7 +89,7 @@ def process_image(image_path,
                                     error_msg)
                     break
                 
-                if confidence > 0.4: #variable.confidence_level:
+                if confidence > 0.3: #variable.confidence_level:
                     if croptype == 3:
                         if width < variable.min_fullbody_res or height < variable.min_fullbody_res:
                             print(f"\rFace resolution is too small for fullbody crop, skipping face_{i} on {filename}{extension}")
@@ -181,7 +181,7 @@ def process_image(image_path,
                 confidence = detections[0, 0, i, 2]
 
                 # Filter out weak detections
-                if confidence > 0.4: #variable.confidence_level:
+                if confidence > 0.3: #variable.confidence_level:
                     box = detections[0, 0, i, 3:7] * np.array([image.shape[1], image.shape[0], image.shape[1], image.shape[0]])
                     (startX, startY, endX, endY) = box.astype(int)
                 
