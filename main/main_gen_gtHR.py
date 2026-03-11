@@ -92,7 +92,7 @@ def main_gen_gtHR(dir_dataset: str) -> None:
                 continue
 
             print(f"\n  Loading: {gt_csv}")
-            df_gt = _load_gt_csv(gt_csv)
+            df_gt = load_gt_csv(gt_csv)
 
             #extract BVP
             sig_bvp_raw = df_gt['Signal_Value'].values.astype(np.float64)
