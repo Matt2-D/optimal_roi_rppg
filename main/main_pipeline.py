@@ -26,7 +26,7 @@ RUN_EVALUATION  = True
 NAME_DATASET  = 'custom'
 ALGORITHMS    = ['CHROM', 'LGI', 'OMIT', 'POS']
 ATTENDANT_ID  = 1
-DISTANCES     = [1, 2, 3]
+DISTANCES     = [1, 2, 3, 4, 5]
 FPS           = 50.0
 
 

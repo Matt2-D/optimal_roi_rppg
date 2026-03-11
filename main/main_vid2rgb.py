@@ -41,7 +41,7 @@ def main_vid2rgb(name_dataset):
 
     if name_dataset == 'custom':
         attendant_id = 1
-        distances = [1, 2, 3]
+        distances = [1, 2, 3, 4, 5]
 
         df_nan = pd.DataFrame(columns=['attendant', 'distance', 'num_nan'])
 

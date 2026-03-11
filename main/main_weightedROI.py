@@ -221,7 +221,7 @@ def main_combine_rois(
 ) -> None:
 
     if distances is None:
-        distances = [1, 2, 3]
+        distances = [1, 2, 3, 4, 5]
 
     dir_crt = os.getcwd()
     rgb_dir = os.path.join(dir_crt, "data", name_dataset, "rgb")
@@ -248,6 +248,6 @@ if __name__ == "__main__":
     main_combine_rois(
         name_dataset="custom",
         attendant_id=1,
-        distances=[1, 2, 3],
+        distances=[1, 2, 3, 4, 5],
         fps=50.0,
     )

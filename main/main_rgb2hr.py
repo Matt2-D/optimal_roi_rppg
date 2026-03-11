@@ -43,7 +43,7 @@ def main_rgb2hr(name_dataset, algorithm):
     if name_dataset == 'custom':
         # Sequence num of attendants.
         attendant_id = 1
-        distances = [1, 2, 3]
+        distances = [1, 2, 3, 4, 5]
         # Loop over all attendants.
         for dist in distances:
             # Parse the RGB signal from the RGB dataframe. Size = [num_frames, num_ROI, rgb_channels(3)].
