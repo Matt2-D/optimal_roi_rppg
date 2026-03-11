@@ -14,10 +14,9 @@ import pandas as pd
 dir_crt = os.getcwd()
 sys.path.append(os.path.join(dir_crt, 'util'))
 from util import util_analysis
-import main_gen_gtHR as gt
 
 
-def _load_gt(dir_crt: str, num_attendant: int, dist: int, num_frames: int):
+def load_gt(dir_crt: str, num_attendant: int, dist: int, num_frames: int):
     # Load ground truth BVP and BPM for a given attendant/distance.
     #Returns gtBVP : np.ndarray  shape [num_frames]
     #gtBPM : np.ndarray  shape [num_frames]
@@ -102,7 +101,7 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
                 print(f"  ROIs found: {num_rois}  |  Frames: {num_frames}")
 
                 # Load ground truth
-                gtBVP, gtBPM = gt.load_gt_csv(dir_crt, num_attendant, dist, num_frames)
+                gtBVP, gtBPM = load_gt(dir_crt, num_attendant, dist, num_frames)
 
                 #Build BVP / BPM arrays [frames x ROIs]
                 sig_bvp = np.zeros([num_frames, num_rois])
