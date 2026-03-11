@@ -17,6 +17,35 @@ from util import util_analysis
 import main_gen_gtHR as gt
 
 
+def _load_gt(dir_crt: str, num_attendant: int, dist: int, num_frames: int):
+    # Load ground truth BVP and BPM for a given attendant/distance.
+    #Returns gtBVP : np.ndarray  shape [num_frames]
+    #gtBPM : np.ndarray  shape [num_frames]
+    gt_dir  = os.path.join(dir_crt, 'data', 'custom', 'gtHR')
+    stem    = f'attendant{num_attendant}_dist{dist}'
+
+    bvp_path = os.path.join(gt_dir, f'{stem}_bvp.csv')
+    bpm_path = os.path.join(gt_dir, f'{stem}_bpm_direct.csv')
+
+    for p in [bvp_path, bpm_path]:
+        if not os.path.isfile(p):
+            raise FileNotFoundError(
+                f"Ground truth file not found: {p}\n"
+                "Run main_gen_gtHR.py first."
+            )
+
+    gtBVP = pd.read_csv(bvp_path).iloc[:, 0].values.astype(np.float64)
+    gtBPM = pd.read_csv(bpm_path).iloc[:, 0].values.astype(np.float64)
+
+    # Safety: trim or pad to num_frames
+    def _fit(arr):
+        if len(arr) >= num_frames:
+            return arr[:num_frames]
+        return np.pad(arr, (0, num_frames - len(arr)), mode='edge')
+
+    return _fit(gtBVP), _fit(gtBPM)
+
+
 def main_eval(name_dataset='custom', algorithm='CHROM'):
     """Evaluation pipeline for a given dataset using a given algorithm.
     Parameters
