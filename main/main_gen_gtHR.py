@@ -28,8 +28,6 @@ NFFT           = 2048
 MIN_HZ         = 0.65
 MAX_HZ         = 4.0
 FPS            = 50
-NUM_FRAMES     = 3000   # Video frame count
-
 
 def load_gt_csv(csv_path: str) -> pd.DataFrame:
     # Load and validate the ground truth CSV
@@ -49,7 +47,18 @@ def align_to_frames(signal: np.ndarray, target_len: int) -> np.ndarray:
     tgt_idx = np.linspace(0, 1, target_len)
     return interp1d(src_idx, signal, kind='linear')(tgt_idx)
 
-def main_gen_gtHR(dir_dataset: str) -> None:
+def get_num_frames(dir_crt: str, name_dataset: str, dist: int) -> int:
+    rgb_csv = os.path.join(dir_crt, 'data', name_dataset, 'rgb', f'{dist}.csv')
+    if not os.path.isfile(rgb_csv):
+        raise FileNotFoundError(
+            f"RGB CSV not found: {rgb_csv}\n"
+            "Run main_vid2rgb.py before main_gen_gtHR.py."
+        )
+    # Read only the frame column — fast even for large files
+    df = pd.read_csv(rgb_csv, usecols=['frame'])
+    return int(df['frame'].max())
+
+def main_gen_gtHR(dir_dataset: str,name_dataset: str = 'custom') -> None:
     """
     Generate ground truth BPM and BVP files for all attendants/distances.
 
@@ -68,6 +77,12 @@ def main_gen_gtHR(dir_dataset: str) -> None:
 
     for num_attendant in tqdm(list_attendant, desc="Attendants"):
         for dist in tqdm(distances, desc=f"  Distances (att{num_attendant})", leave=False):
+            try:
+                num_frames = get_num_frames(os.getcwd(), name_dataset, dist)
+                print(f"\n  dist={dist} → {num_frames} frames (from RGB CSV)")
+            except FileNotFoundError as e:
+                print(f"  [WARN] {e} — skipping dist={dist}")
+                continue
 
             # Expected location: <dataset>/attendant<n>/<dist>/pulse_data.csv
             # Searches one level of subfolders to handle timestamped subdirs.
@@ -101,14 +116,14 @@ def main_gen_gtHR(dir_dataset: str) -> None:
             sig_bvp_raw = sig_bvp_raw - np.mean(sig_bvp_raw)
 
             # Resample from 2987 → 3000 frames
-            sig_bvp = align_to_frames(sig_bvp_raw, NUM_FRAMES)
+            sig_bvp = align_to_frames(sig_bvp_raw, num_frames)
 
             # Remove zeros BEFORE resampling to avoid smearing zeros into signal.
             hr_sparse = df_gt['HR'].values.astype(np.float64)
             hr_sparse[hr_sparse == 0] = np.nan
             hr_filled = pd.Series(hr_sparse).interpolate(
                 method='linear').ffill().bfill().values
-            sig_bpm_direct = align_to_frames(hr_filled, NUM_FRAMES)
+            sig_bpm_direct = align_to_frames(hr_filled, num_frames)
 
             # save outputs
             stem = f'attendant{num_attendant}_dist{dist}'
