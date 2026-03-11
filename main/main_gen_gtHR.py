@@ -49,35 +49,6 @@ def _align_to_frames(signal: np.ndarray, target_len: int) -> np.ndarray:
     tgt_idx = np.linspace(0, 1, target_len)
     return interp1d(src_idx, signal, kind='linear')(tgt_idx)
 
-
-def _estimate_bpm(sig_bvp: np.ndarray, fps: float) -> np.ndarray:
-    # Welch BPM estimation
-    len_window_frame   = int(LEN_WINDOW * fps)
-    stride_window_frame = int(STRIDE_WINDOW * fps)
-    sig_bpm = np.zeros(len(sig_bvp))
-
-    idx_crt = 0
-    while (idx_crt + len_window_frame - 1) <= (len(sig_bvp) - 1):
-        sig_slice = sig_bvp[idx_crt : idx_crt + len_window_frame]   # fixed: no -1 off-by-one
-
-        # Welch expects shape [1, N]
-        Pfreqs, Power = util_pyVHR.Welch(
-            np.reshape(sig_slice, [1, len(sig_slice)]),
-            fps, MIN_HZ, MAX_HZ, NFFT
-        )
-        Pmax = np.argmax(Power, axis=1)
-        centre_idx = int(0.5 * (2 * idx_crt + len_window_frame - 1))
-        sig_bpm[centre_idx] = float(Pfreqs.squeeze()[Pmax.squeeze()])  # already in BPM (util_pyVHR.Welch returns BPM not Hz)
-
-        idx_crt += stride_window_frame
-
-    # Interpolate zeros
-    sig_bpm[sig_bpm == 0] = np.nan
-    s = pd.Series(sig_bpm)
-    s = s.interpolate(method='linear').ffill().bfill()
-    return s.values
-
-
 def main_gen_gtHR(dir_dataset: str) -> None:
     """
     Generate ground truth BPM and BVP files for all attendants/distances.
@@ -139,9 +110,6 @@ def main_gen_gtHR(dir_dataset: str) -> None:
                 method='linear').ffill().bfill().values
             sig_bpm_direct = _align_to_frames(hr_filled, NUM_FRAMES)
 
-            # re-estimate BPM from Signal_Value via Welch
-            sig_bpm_welch = _estimate_bpm(sig_bvp, FPS)
-
             # save outputs
             stem = f'attendant{num_attendant}_dist{dist}'
 
@@ -156,13 +124,6 @@ def main_gen_gtHR(dir_dataset: str) -> None:
                 os.path.join(dir_out, f'{stem}_bpm_direct.csv'),
                 index=False, header=['BPM']
             )
-
-            # BPM — Welch re-estimation from raw signal
-            pd.Series(sig_bpm_welch).to_csv(
-                os.path.join(dir_out, f'{stem}_bpm_welch.csv'),
-                index=False, header=['BPM']
-            )
-
             print(f"  Saved GT for att{num_attendant} dist{dist} → {dir_out}")
 
 
