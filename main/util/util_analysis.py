@@ -902,113 +902,75 @@ def rppg_hr_pipe(sig_rgb, method, Params):
 
 
 def eval_pipe(sig_bvp, sig_bpm, gtTrace, gtHR, Params, roi_names=None):
-    """The complete pipeline for rPPG algorithm evaluation.
+    """
+    Clean evaluation for custom dataset.
+    Evaluates BPM vs GT BPM, per ROI, per frame.
 
     Parameters
     ----------
-    sig_bvp     : BVP signal. Size=[num_frames, num_ROI].
-    sig_bpm     : BPM signal. Size=[num_frames, num_ROI].
-    gtTrace     : Ground truth PPG waveform. Size=[num_frames].
-    gtHR        : Ground truth HR (BPM). Size=[num_frames].
-    Params      : Pre-defined parameters class.
-    roi_names   : Optional list of ROI name strings. If None, falls back
-                  to Params.list_roi_name (28 ROIs only).
+    sig_bvp : ignored (kept for compatibility)
+    sig_bpm : array [num_frames, num_rois]
+    gtTrace : ignored (kept for compatibility)
+    gtHR    : ground truth BPM [num_frames]
+    Params  : unused except for compatibility
+    roi_names : list of ROI names (e.g., ["ROI29", "ROI30"])
     """
 
-    # Use dynamic ROI list if provided, else fall back to Params
     if roi_names is None:
-        roi_names = Params.list_roi_name
-    num_rois = len(roi_names)
+        raise ValueError("roi_names must be provided for custom dataset")
 
-    # Metric arrays sized to actual number of ROIs
-    list_DTW  = np.zeros(num_rois)
-    list_PCC  = np.zeros(num_rois)
-    list_CCC  = np.zeros(num_rois)
+    num_rois = len(roi_names)
+    num_frames = len(gtHR)
+
+    # Metric arrays
+    list_PCC = np.zeros(num_rois)
+    list_CCC = np.zeros(num_rois)
     list_RMSE = np.zeros(num_rois)
-    list_MAE  = np.zeros(num_rois)
+    list_MAE = np.zeros(num_rois)
     list_MAPE = np.zeros(num_rois)
 
-    # Window parameters — derived from FPS via Params
-    fs          = Params.fps
-    win_samples = int(10.0 * fs)   # 10s window
-    hop_samples = win_samples      # non-overlapping
+    # --- Metric helpers ---
+    def ccc(x, y):
+        mean_x, mean_y = np.mean(x), np.mean(y)
+        var_x, var_y = np.var(x), np.var(y)
+        cov = np.mean((x - mean_x) * (y - mean_y))
+        return (2 * cov) / (var_x + var_y + (mean_x - mean_y) ** 2)
 
-    N = min(len(gtTrace), len(gtHR), sig_bvp.shape[0], sig_bpm.shape[0])
-    gtTrace = gtTrace[:N]
-    gtHR    = gtHR[:N]
+    def safe_rmse(a, b):
+        return np.sqrt(np.mean((a - b) ** 2))
 
-    if N < win_samples:
-        raise ValueError(
-            f"Not enough frames for a 10s window: N={N}, need {win_samples}. "
-            "Reduce window size or check inputs."
-        )
+    def safe_mae(a, b):
+        return np.mean(np.abs(a - b))
 
-    num_win = len(range(0, N - win_samples + 1, hop_samples))
+    def safe_mape(a, b):
+        return np.mean(np.abs((a - b) / a)) * 100
 
-    # Single ROI loop — no double loop
-    for i in tqdm(range(num_rois)):
-        sig_bvp_crt = sig_bvp[:N, i]
-        sig_bpm_crt = sig_bpm[:N, i]
+    # --- Evaluate each ROI independently ---
+    for i in range(num_rois):
+        est = sig_bpm[:, i].astype(float)
+        gt = gtHR.astype(float)
 
-        for slice_start in range(0, N - win_samples + 1, hop_samples):
-            slice_end = slice_start + win_samples
+        # Ensure equal length
+        N = min(len(est), len(gt))
+        est = est[:N]
+        gt = gt[:N]
 
-            gtTrace_slice = gtTrace[slice_start:slice_end]
-            gtHR_slice    = gtHR[slice_start:slice_end]
-            bvp_slice     = sig_bvp_crt[slice_start:slice_end]
-            bpm_slice     = sig_bpm_crt[slice_start:slice_end]
+        # Metrics
+        list_PCC[i] = np.corrcoef(est, gt)[0, 1]
+        list_CCC[i] = ccc(est, gt)
+        list_RMSE[i] = safe_rmse(est, gt)
+        list_MAE[i] = safe_mae(est, gt)
+        list_MAPE[i] = safe_mape(est, gt)
 
-            # Normalize gtTrace slice
-            gt_min, gt_max = np.min(gtTrace_slice), np.max(gtTrace_slice)
-            gt_denom = gt_max - gt_min
-            if gt_denom > 0:
-                gtTrace_norm = (gtTrace_slice - gt_min) / gt_denom
-            else:
-                continue  # flat GT slice — skip
-
-            # Normalize BVP slice
-            finite_mask = np.isfinite(bvp_slice)
-            if finite_mask.sum() == 0:
-                continue
-            x = bvp_slice[finite_mask]
-            x_min, x_max = np.nanmin(x), np.nanmax(x)
-            denom = x_max - x_min
-            if np.isfinite(denom) and denom > 0:
-                bvp_norm = bvp_slice.copy()
-                bvp_norm[finite_mask] = (x - x_min) / (denom + 1e-12)
-            else:
-                x_std = np.nanstd(x)
-                if x_std == 0:
-                    continue
-                bvp_norm = bvp_slice.copy()
-                bvp_norm[finite_mask] = (x - np.nanmean(x)) / x_std
-
-            # Metrics
-            list_DTW[i]  += dtw.distance(gtTrace_norm, bvp_norm)
-            list_PCC[i]  += np.abs(np.corrcoef(gtTrace_norm, bvp_norm)[0, 1])
-            list_CCC[i]  += np.abs(util_pyVHR.concordance_correlation_coefficient(
-                                bpm_true=gtTrace_norm, bpm_pred=bvp_norm))
-            list_RMSE[i] += safe_rmse(gtHR_slice, bpm_slice)
-            list_MAE[i]  += safe_mae(gtHR_slice, bpm_slice)
-            list_MAPE[i] += safe_mape(gtHR_slice, bpm_slice)
-
-    # Average over windows
-    list_DTW  /= num_win
-    list_PCC  /= num_win
-    list_CCC  /= num_win
-    list_RMSE /= num_win
-    list_MAE  /= num_win
-    list_MAPE /= num_win
-
-    # Build output DataFrame with dynamic ROI names
+    # Build output DataFrame
     df_metric = pd.DataFrame({
-        'ROI':  roi_names,
-        'DTW':  list_DTW,
-        'PCC':  list_PCC,
-        'CCC':  list_CCC,
-        'RMSE': list_RMSE,
-        'MAE':  list_MAE,
-        'MAPE': list_MAPE,
+        "ROI": roi_names,
+        "DTW": [np.nan] * num_rois,  # Not used for custom dataset
+        "PCC": list_PCC,
+        "CCC": list_CCC,
+        "RMSE": list_RMSE,
+        "MAE": list_MAE,
+        "MAPE": list_MAPE,
     })
 
     return df_metric
