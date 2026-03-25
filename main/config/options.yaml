@@ -2,7 +2,8 @@
 # Author: Shuo Li
 # Date: 2023/05/30:
 custom:
-  dir_dataset: 'C:\Users\dowellm2\rPPG\optimal_roi_rppg-master\main\data\custom'
+  #dir_dataset: 'C:\Users\dowellm2\rPPG\optimal_roi_rppg-master\main\data\custom'
+  dir_dataset: 'C:\Users\mattt\projects\rPPG\optimal_roi_rppg\main\data\custom'
   fps: 50
   url: https://www.google.com
   len_window: 2  # Window length in seconds.

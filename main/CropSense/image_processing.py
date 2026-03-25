@@ -4,7 +4,7 @@ import imghdr
 import win32com.client
 from tqdm import tqdm
 import numpy as np
-import variable
+from main.CropSense import variable
 
 def images_error(image_path, error_folder):
     shell = win32com.client.Dispatch("WScript.Shell")

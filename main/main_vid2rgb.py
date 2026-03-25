@@ -64,8 +64,7 @@ def main_vid2rgb(name_dataset):
                 )
 
             # CropSense
-            crop_stats = run_cropsense(
-                input_dir=raw_folder,
+            crop_stats = run_cropsense(input_dir=raw_folder,
                 output_dir=cropped_folder,
                 croptype="face",  # change to "upperbody"/"fullbody" if needed
                 top_margin=0.2,
@@ -89,7 +88,7 @@ def main_vid2rgb(name_dataset):
 
             # Extract RGB signal
             Params.fps = 50
-            df_rgb, num_nan = util_analysis.frames_to_sig(
+            df_rgb, num_nan = util_analysis.frames_to_sig_stable(
                 frame_folder=cropped_folder,
                 Params=Params
             )

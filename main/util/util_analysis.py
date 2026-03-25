@@ -117,7 +117,8 @@ class GroundTruth():
         gtHR: Ground truth HR data in numpy array. Size = [num_frames].
         """
         if self.name_dataset == 'custom':
-            dir_crt = r"C:\Users\dowellm2\rPPG\optimal_roi_rppg-master\main\data\custom\Yuao1m\1\20251202_155614\Yuao-1m-1min-finger-ground-truth-data-1.csv"
+            dir_crt = r'C:\Users\mattt\projects\rPPG\optimal_roi_rppg\main\data\custom'
+            #dir_crt = r"C:\Users\dowellm2\rPPG\optimal_roi_rppg-master\main\data\custom\Yuao1m\1\20251202_155614\Yuao-1m-1min-finger-ground-truth-data-1.csv"
             df_GT = pd.read_csv(dir_crt, header=0)
 
             # Inspect columns once to confirm names
@@ -232,10 +233,40 @@ class GroundTruth():
         return gtTime, gtTrace, gtHR
 
 
+EMA_ALPHA = 0.25  # EMA weight for new landmark position (0=frozen, 1=no smoothing)
+POSE_UPDATE_THRESH = 0.015  # Normalised landmark shift to trigger a full update (~1.5% of frame)
+QUALITY_GATE_ZSCORE = 3.5  # Flag frames where landmark shift z-score > this value
+MIN_VALID_FRAMES = 0.5  # Fraction of frames that must be valid; warn if below this
+
+class KalmanPoint:
+    #Minimal constant-velocity Kalman filter for one (x, y) landmark.
+
+    def __init__(self):
+        self.kf = cv2.KalmanFilter(4, 2)  # state=[x,y,vx,vy], obs=[x,y]
+        self.kf.measurementMatrix = np.array([[1, 0, 0, 0], [0, 1, 0, 0]], np.float32)
+        self.kf.transitionMatrix = np.array([[1, 0, 1, 0], [0, 1, 0, 1],
+                                             [0, 0, 1, 0], [0, 0, 0, 1]], np.float32)
+        self.kf.processNoiseCov = np.eye(4, dtype=np.float32) * 1e-4
+        self.kf.measurementNoiseCov = np.eye(2, dtype=np.float32) * 1e-2
+        self.kf.errorCovPost = np.eye(4, dtype=np.float32)
+        self.initialized = False
+
+    def update(self, x: float, y: float):
+        meas = np.array([[x], [y]], dtype=np.float32)
+        if not self.initialized:
+            self.kf.statePre = np.array([[x], [y], [0], [0]], dtype=np.float32)
+            self.initialized = True
+        self.kf.predict()
+        state = self.kf.correct(meas)
+        return float(state[0]), float(state[1])
+
+
+
 class FaceDetector():
     """A class for face detection, segmentation and RGB signal extraction."""
 
-    def __init__(self, Params):
+    def __init__(self, Params, smoothing='ema',
+                 use_quality_gate=True, use_motion_comp=True):
         """Class initialization.
         Parameters
         ----------
@@ -263,78 +294,107 @@ class FaceDetector():
         self.list_roi_num = np.array(Params.list_roi_num, dtype=object)
         # The list containing names of different ROIs. Size = [num_roi].
         self.list_roi_name = np.array(Params.list_roi_name, dtype=object)
+        # Jitter reduction
+        self.use_quality_gate = use_quality_gate
+        self.use_motion_comp = use_motion_comp
+        self.smoothing = smoothing
+        self.smoothed_landmarks = None  # shape [468, 3]
+        self.prev_landmarks = None  # for shift computation
+        self.shift_history = []  # list of per-frame mean shifts
+
+        if smoothing == 'kalman':
+            self.kalman_filters = [KalmanPoint() for _ in range(468)]
+
+    # smooth a new raw landmark array
+
+    def smooth_landmarks(self, raw: np.ndarray) -> np.ndarray:
+        """Apply EMA or Kalman smoothing to raw [468,3] landmark array."""
+        if self.smoothing == 'kalman':
+            smoothed = raw.copy()
+            for i, kf in enumerate(self.kalman_filters):
+                sx, sy = kf.update(raw[i, 0], raw[i, 1])
+                smoothed[i, 0] = sx
+                smoothed[i, 1] = sy
+            return smoothed
+        else:
+            # EMA
+            if self.smoothed_landmarks is None:
+                return raw.copy()
+            return (EMA_ALPHA * raw
+                    + (1.0 - EMA_ALPHA) * self.smoothed_landmarks)
+
+    # mean landmark shift
+
+    def landmark_shift(self, new: np.ndarray) -> float:
+        """Mean Euclidean shift of x,y coords vs previous smoothed position."""
+        if self.prev_landmarks is None:
+            return 0.0
+        diff = new[:, :2] - self.prev_landmarks[:, :2]
+        return float(np.mean(np.linalg.norm(diff, axis=1)))
 
     def extract_landmark(self, img):
-        """Extract 2D keypoint locations.
-        Parameters
-        ----------
-        img: The input image of the current frame. Channel = [B, G, R].
+        img_RGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        results = self.faceMesh.process(img_RGB)
+        quality = True
 
-        Returns
-        -------
-        loc_landmark: Detected normalized 3D landmarks. Size=[468, 3].
-        """
-        
-        img_RGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # BGR -> RGB.
-        results = self.faceMesh.process(img_RGB)  # Apply face mesh.
-        # Draw landmarks on the image.
         if results.multi_face_landmarks:
-            # If the face is detected.
-            # Loop over all detected faces.
-            # In this experiment, we only detect one face in one video.
             for face_landmark in results.multi_face_landmarks:
-                # Decompose the 3D face landmarks without resizing into the image size.
-                loc_landmark = np.zeros([len(face_landmark.landmark), 3], dtype=np.float32)  # Coordinates of 3D landmarks.
-                for i in range(len(face_landmark.landmark)):
-                    loc_landmark[i, 0] = face_landmark.landmark[i].x
-                    loc_landmark[i, 1] = face_landmark.landmark[i].y
-                    loc_landmark[i, 2] = face_landmark.landmark[i].z
-        else:
-            # If no face is detected.
-            loc_landmark = np.nan
-        
-        return loc_landmark
+                raw = np.zeros([len(face_landmark.landmark), 3], dtype=np.float32)
+                for i, lm in enumerate(face_landmark.landmark):
+                    raw[i] = [lm.x, lm.y, lm.z]
 
+            shift = self.landmark_shift(raw)
+            self.shift_history.append(shift)
+
+            # Quality gate: flag ONLY — does NOT block the update
+            if self.use_quality_gate and len(self.shift_history) > 10:
+                mu = np.mean(self.shift_history)
+                sig = np.std(self.shift_history) + 1e-9
+                if (shift - mu) / sig > QUALITY_GATE_ZSCORE:
+                    quality = False
+
+            # ALWAYS update with EMA smoothing — never freeze landmarks
+            smoothed = self.smooth_landmarks(raw)
+            self.smoothed_landmarks = smoothed
+            self.prev_landmarks = smoothed.copy()
+
+            return self.smoothed_landmarks, quality
+
+        else:
+            self.shift_history.append(0.0)
+            return np.nan, False
 
     def extract_RGB(self, img, loc_landmark):
-        """Extract RGB signals from the given image and ROI.
-        Parameters
-        ----------
-        img: 2D image. Default in BGR style. Size=[height, width, 3]
-        loc_landmark: Detected normalized (0-1) 3D landmarks. Size=[468, 3].
+        if not isinstance(loc_landmark, np.ndarray) or np.isnan(loc_landmark).any():
+            return np.full((self.list_roi_num.shape[0], 3), np.nan)
 
-        Returns
-        -------
-        sig_rgb: RGB signal of the current frame as a numpy array. Size=[num_roi, 3].
-        """
+        img_RGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        height_img = img.shape[0]
+        width_img = img.shape[1]
 
-        if (np.isnan(loc_landmark)).any() == True:
-            # If no face is detected.
-            sig_rgb = np.nan
-        else:
-            # If the face is detected.
-            # BGR -> RGB.
-            img_RGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            # Rescale the input landmarks location.
-            height_img = img.shape[0]
-            width_img = img.shape[1]
-            loc_landmark[:, 0] = loc_landmark[:, 0] * width_img
-            loc_landmark[:, 1] = loc_landmark[:, 1] * height_img
-            # RGB signal initialization.
-            sig_rgb = np.zeros(shape=[self.list_roi_num.shape[0], 3])
-            # Loop over all ROIs.
-            zeros = np.zeros(img.shape, dtype=np.uint8)
-            for i_roi in range(0, self.list_roi_num.shape[0]):
-                # Create the current ROI mask.
-                roi_name = self.list_roi_name[i_roi]
-                mask = cv2.fillPoly(zeros.copy(), [loc_landmark[self.list_roi_num[self.list_roi_name==roi_name][0], :2].astype(int)], color=(1, 1, 1))
-                # Only compute on a specific ROI.
-                img_masked = np.multiply(img_RGB, mask)
-                # Compute the RGB signal.
-                sig_rgb[i_roi, :] = 3*img_masked.sum(0).sum(0)/(mask.sum())
+        # COPY before scaling — never mutate self.smoothed_landmarks
+        lm = loc_landmark.copy()
+        lm[:, 0] = lm[:, 0] * width_img
+        lm[:, 1] = lm[:, 1] * height_img
+
+        sig_rgb = np.zeros(shape=[self.list_roi_num.shape[0], 3])
+        zeros = np.zeros(img.shape, dtype=np.uint8)
+
+        for i_roi in range(self.list_roi_num.shape[0]):
+            roi_name = self.list_roi_name[i_roi]
+            mask = cv2.fillPoly(
+                zeros.copy(),
+                [lm[self.list_roi_num[self.list_roi_name == roi_name][0], :2].astype(int)],
+                color=(1, 1, 1)
+            )
+            img_masked = np.multiply(img_RGB, mask)
+            mask_sum = mask.sum()
+            if mask_sum > 0:
+                sig_rgb[i_roi, :] = 3 * img_masked.sum(0).sum(0) / mask_sum
+            else:
+                sig_rgb[i_roi, :] = np.nan
 
         return sig_rgb
-
 
     def faceMeshDraw(self, img, roi_name):
         """Draw a face mesh annotations on the input image.
@@ -381,6 +441,131 @@ class FaceDetector():
                 img_draw = img + mask * 50
             
         return img_draw
+
+def motion_compensate(df_rgb: pd.DataFrame,
+                       roi_names: list) -> pd.DataFrame:
+    #Regress out the global luminance proxy from each ROI's R, G, B traces.
+
+    frames = sorted(df_rgb['frame'].unique())
+    # Build global green proxy [num_frames]
+    green_proxy = np.array([
+        df_rgb.loc[df_rgb['frame'] == f, 'G'].mean()
+        for f in frames
+    ])
+    # Normalise proxy to zero mean
+    green_proxy = green_proxy - green_proxy.mean()
+
+    # Regress proxy out of each channel of each ROI
+    for roi in roi_names:
+        mask = df_rgb['ROI'] == roi
+        for ch in ['R', 'G', 'B']:
+            trace = df_rgb.loc[mask, ch].values.astype(np.float64)
+            if np.isnan(trace).all():
+                continue
+            # OLS regression: trace = a*proxy + b  →  residual = trace - a*proxy
+            valid = np.isfinite(trace) & np.isfinite(green_proxy)
+            if valid.sum() < 2:
+                continue
+            a = (np.cov(trace[valid], green_proxy[valid])[0, 1]
+                 / (np.var(green_proxy[valid]) + 1e-12))
+            df_rgb.loc[mask, ch] = trace - a * green_proxy
+
+    return df_rgb
+
+# Stabilized frames_to_sig
+
+def frames_to_sig_stable(frame_folder: str, Params,
+                         smoothing: str = 'ema',
+                         use_quality_gate: bool = True,
+                         use_motion_comp: bool = True):
+    #Adds: Temporal landmark smoothing (EMA or Kalman)
+    # Motion-aware update threshold (suppress micro-jitter)
+    # Quality gating (outlier frames → NaN → interpolated)
+    #Signal-space motion compensation (global luminance regression)
+
+    Detector = FaceDetector(
+        Params,
+        smoothing=smoothing,
+        use_quality_gate=use_quality_gate,
+        use_motion_comp=use_motion_comp,
+    )
+
+    df_rgb = pd.DataFrame(columns=['frame', 'time', 'ROI', 'R', 'G', 'B'])
+    num_frame = 0
+    gated_frames = 0
+
+    frame_files = sorted([
+        f for f in os.listdir(frame_folder)
+        if not f.endswith("face_1.png")
+    ])
+
+    progress = tqdm(frame_files, desc="[stable] Extracting ROI signals",
+                    dynamic_ncols=True)
+
+    for f in progress:
+        img_frame = cv2.imread(os.path.join(frame_folder, f))
+        if img_frame is None:
+            continue
+
+        # Stabilized landmark extraction
+        loc_landmark, quality = Detector.extract_landmark(img=img_frame)
+
+        if not quality:
+            gated_frames += 1
+
+        # Extract RGB (uses stabilized landmarks; gated frames → NaN)
+        if quality:
+            sig_rgb = Detector.extract_RGB(img=img_frame,
+                                           loc_landmark=loc_landmark)
+        else:
+            sig_rgb = np.nan  # will be interpolated below
+
+        # Build per-frame rows
+        num_frame += 1
+        df_tmp = pd.DataFrame(
+            columns=['frame', 'time', 'ROI', 'R', 'G', 'B'],
+            index=range(len(Params.list_roi_name))
+        )
+        for i_roi, roi_name in enumerate(Params.list_roi_name):
+            df_tmp.loc[i_roi, 'ROI'] = roi_name
+            if (isinstance(sig_rgb, float) and np.isnan(sig_rgb)) or \
+                    (isinstance(sig_rgb, np.ndarray) and np.isnan(sig_rgb).any()):
+                df_tmp.loc[i_roi, ['R', 'G', 'B']] = np.nan
+            else:
+                df_tmp.loc[i_roi, ['R', 'G', 'B']] = sig_rgb[i_roi, :]
+
+        df_tmp['frame'] = num_frame
+        df_tmp['time'] = num_frame * Params.fps
+        df_tmp[['frame']] = df_tmp[['frame']].astype('int')
+        df_tmp[['time', 'R', 'G', 'B']] = df_tmp[['time', 'R', 'G', 'B']].astype('float')
+        df_rgb = pd.concat([df_rgb, df_tmp])
+
+    df_rgb = df_rgb.reset_index(drop=True)
+    num_nan = df_rgb.isnull().sum().sum()
+
+    # Interpolate NaN frames (quality-gated or no-detection)
+    for roi_name in Params.list_roi_name:
+        mask = df_rgb['ROI'] == roi_name
+        df_rgb.loc[mask] = (df_rgb.loc[mask]
+                            .interpolate(method='linear')
+                            .ffill()
+                            .bfill())
+
+    # Signal-space motion compensation (after interpolation)
+    if use_motion_comp:
+        df_rgb = motion_compensate(df_rgb, list(Params.list_roi_name))
+
+    # Report gating stats
+    total = num_frame if num_frame > 0 else 1
+    gate_pct = 100 * gated_frames / total
+    print(f"\n[stable] Frames processed : {num_frame}")
+    print(f"[stable] Frames gated out : {gated_frames} ({gate_pct:.1f}%)")
+    print(f"[stable] NaN values before interpolation: {num_nan}")
+    if gated_frames / total > (1 - MIN_VALID_FRAMES):
+        print(f"[stable] WARNING: >{100 * (1 - MIN_VALID_FRAMES):.0f}% of frames "
+              "were gated — check lighting or face occlusion.")
+
+    return df_rgb, num_nan
 
 def frames_to_sig(frame_folder, Params):
     """Transform the input frames into RGB signals.
@@ -430,7 +615,8 @@ def frames_to_sig(frame_folder, Params):
         for i_roi in range(len(Params.list_roi_name)):
             # ROI name.
             df_rgb_tmp.loc[i_roi, 'ROI'] = Params.list_roi_name[i_roi]
-            if (np.isnan(sig_rgb)).any() == True:
+            if (isinstance(sig_rgb, float) and np.isnan(sig_rgb)) or \
+                    (isinstance(sig_rgb, np.ndarray) and np.isnan(sig_rgb).any()):
                 # If no face is detected.
                 df_rgb_tmp.loc[i_roi, ['R', 'G', 'B']] = np.nan
             else:
@@ -495,7 +681,7 @@ def vid_to_sig(dir_vid, Params):
             # Terminate in the end.
             break
         # Detect facial landmark keypoints. The locations are normalized into [0, 1].
-        loc_landmark = Detector_crt.extract_landmark(img=img_frame)  # Size = [468, 3]
+        loc_landmark, quality = Detector_crt.extract_landmark(img=img_frame)
         # Extract RGB signal.
         sig_rgb = Detector_crt.extract_RGB(img=img_frame, loc_landmark=loc_landmark)  # Size = [num_roi, 3].
         # Loop over all ROIs and save the RGB data.

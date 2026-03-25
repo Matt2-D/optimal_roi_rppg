@@ -39,10 +39,16 @@ NFFT = 4096
 
 
 def compute_snr2(signal: np.ndarray, fps: float) -> float:
-
-    signal = signal - np.mean(signal)           # remove DC
+    signal = signal - np.mean(signal)
     if np.all(signal == 0):
+        print(f"    [SNR diag] all-zero signal, len={len(signal)}")
         return -np.inf
+    if np.all(~np.isfinite(signal)):
+        print(f"    [SNR diag] all-NaN/inf signal, len={len(signal)}")
+        return -np.inf
+
+    # Replace any NaN with 0 before Welch
+    signal = np.nan_to_num(signal, nan=0.0)
 
     freqs, power = welch(
         signal,
@@ -53,12 +59,15 @@ def compute_snr2(signal: np.ndarray, fps: float) -> float:
         scaling="density",
     )
 
-    # Restrict to physiological band
     band = (freqs >= MIN_HZ) & (freqs <= MAX_HZ)
     freqs = freqs[band]
     power = power[band]
 
     if len(power) == 0:
+        print(f"    [SNR diag] no bins in [{MIN_HZ},{MAX_HZ}] Hz. "
+              f"fps={fps}, signal_len={len(signal)}, "
+              f"freq_range=[{freqs.min() if len(freqs) else 'N/A'},"
+              f"{freqs.max() if len(freqs) else 'N/A'}]")
         return -np.inf
 
     # Fundamental ±2 bins
