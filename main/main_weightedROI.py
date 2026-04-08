@@ -37,7 +37,7 @@ ROI31_NAME = "snr_weighted_composite"
 ROI32_NAME = "ac_weighted_composite"
 ROI33_NAME = "fc_weighted_composite"
 ROI34_NAME = "cra_weighted_composite"
-
+ROI35_NAME = "full_frame_average"
 
 MIN_HZ = 0.7
 MAX_HZ = 2.5
@@ -383,6 +383,25 @@ def build_roi34(roi_data: dict, weights: np.ndarray, frames: list,
             "R": r, "G": g, "B": b,
         })
     return pd.DataFrame(records, columns=["frame", "time", "ROI", "R", "G", "B"])
+
+def build_roi35(df: pd.DataFrame, frames: list,
+                 time_lookup: dict) -> pd.DataFrame:
+    """
+    ROI 35 — unweighted average R, G, B across ALL ROIs per frame.
+    Represents the whole-frame mean signal.
+    """
+    records = []
+    for frame in frames:
+        frame_rows = df[df["frame"] == frame]
+        records.append({
+            "frame": frame,
+            "time":  time_lookup.get(frame, np.nan),
+            "ROI":   ROI35_NAME,
+            "R":     float(frame_rows["R"].mean()),
+            "G":     float(frame_rows["G"].mean()),
+            "B":     float(frame_rows["B"].mean()),
+        })
+    return pd.DataFrame(records, columns=["frame", "time", "ROI", "R", "G", "B"])
 # Main per-file function
 
 def append_composite_rois(csv_path: str, fps: float,
@@ -430,6 +449,7 @@ def append_composite_rois(csv_path: str, fps: float,
         'AC_SQI':  ROI32_NAME,   # autocorrelation
         'FC_SQI':  ROI33_NAME,   # frequency consistency
         'CRA_SQI': ROI34_NAME,   # cross-ROI agreement
+        'FF_AVG': ROI35_NAME
     }
 
     loaded_weights = {}   # col → np.ndarray
@@ -478,15 +498,16 @@ def append_composite_rois(csv_path: str, fps: float,
     roi32_df = build_roi32(roi_data, resolve('AC_SQI'), frames, time_lookup).reset_index(drop=True)
     roi33_df = build_roi33(roi_data, resolve('FC_SQI'), frames, time_lookup).reset_index(drop=True)
     roi34_df = build_roi34(roi_data, resolve('CRA_SQI'), frames, time_lookup).reset_index(drop=True)
+    roi35_df = build_roi35(df, frames, time_lookup).reset_index(drop=True)
 
     for name, rdf in [(ROI29_NAME, roi29_df), (ROI30_NAME, roi30_df),
                       (ROI31_NAME, roi31_df), (ROI32_NAME, roi32_df),
-                      (ROI33_NAME, roi33_df), (ROI34_NAME, roi34_df)]:
+                      (ROI33_NAME, roi33_df), (ROI34_NAME, roi34_df), (ROI35_NAME, roi35_df)]:
         print(f"  {name}: {len(rdf)} frames")
 
     # Append and save
     df_updated = pd.concat(
-        [df, roi29_df, roi30_df, roi31_df, roi32_df, roi33_df, roi34_df],
+        [df, roi29_df, roi30_df, roi31_df, roi32_df, roi33_df, roi34_df, roi35_df],
         ignore_index=True
     )
     df_updated.to_csv(csv_path, index=False)
@@ -511,8 +532,8 @@ def main_combine_rois(
                  Uses the first one found per distance.
     """
     if distances is None:
-        list_attendant = [1,2,3,4,5,6]
-        distances = [1, 2 , 3, 4, 5]
+        list_attendant = [1, 2]
+        distances = [1, 2]  # , 3, 4, 5]
     if algorithms is None:
         algorithms = ['LGI', 'CHROM', 'OMIT', 'POS']
 
