@@ -511,8 +511,8 @@ def main_combine_rois(
                  Uses the first one found per distance.
     """
     if distances is None:
-        list_attendant = [1, 2]
-        distances = [1, 2]  # , 3, 4, 5]
+        list_attendant = [1,2,3,4,5,6]
+        distances = [1, 2 , 3, 4, 5]
     if algorithms is None:
         algorithms = ['LGI', 'CHROM', 'OMIT', 'POS']
 

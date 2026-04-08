@@ -42,8 +42,8 @@ def main_rgb2hr(name_dataset, algorithm):
     # RGB signal -> bvp signal.
     if name_dataset == 'custom':
         # Sequence num of attendants.
-        list_attendant = [1,2]
-        distances = [1, 2]  # , 3, 4, 5]
+        list_attendant = [1,2,3,4,5,6]
+        distances = [1, 2 , 3, 4, 5]
         # Loop over all attendants.
         for attendant in list_attendant:
             for dist in distances:

@@ -66,8 +66,8 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
     GT = util_analysis.GroundTruth(dir_dataset=Params.dir_dataset, name_dataset=name_dataset)
     # Structures for different datasets.
     if name_dataset == "custom":
-        list_attendant = [1, 2]
-        distances = [1, 2]#, 3, 4, 5]
+        list_attendant = [1,2,3,4,5,6]
+        distances = [1, 2 , 3, 4, 5]
 
         df_eval = pd.DataFrame(
             columns=['attendant', 'distance', 'ROI',

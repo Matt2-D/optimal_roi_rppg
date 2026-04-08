@@ -73,8 +73,8 @@ def main_gen_gtHR(dir_dataset: str,name_dataset: str = 'custom') -> None:
                   (e.g. data/custom  — attendant folders live inside)
     """
 
-    list_attendant = [1,2]
-    distances = [1, 2]  # , 3, 4, 5]
+    list_attendant = [1,2,3,4,5,6]
+    distances = [1, 2 , 3, 4, 5]
 
     # Output directory
     dir_out = os.path.join(os.getcwd(), 'data', 'custom', 'gtHR')

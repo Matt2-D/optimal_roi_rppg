@@ -40,8 +40,8 @@ def main_vid2rgb(name_dataset):
     Params = util_analysis.Params(dir_option=dir_option, name_dataset=name_dataset)
 
     if name_dataset == 'custom':
-        list_attendant = [1,2]
-        distances = [1, 2] #, 3, 4, 5]
+        list_attendant = [1,2,3,4,5,6]
+        distances = [1, 2 , 3, 4, 5]
 
         df_nan = pd.DataFrame(columns=['attendant', 'distance', 'num_nan'])
 
