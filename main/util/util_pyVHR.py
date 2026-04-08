@@ -111,7 +111,7 @@ class BPM:
         self.verb = verb
         self.minHz = minHz
         self.maxHz = maxHz
-    
+
     def BVP_to_BPM(self):
         """
         Return the BPM signal as a float32 Numpy.ndarray with shape [num_estimators, ].
@@ -239,6 +239,112 @@ class BPM:
 
         return snr_linear
 
+    def frequency_consistency_sqi(bpm_per_window):
+        """
+        Low std of BPM estimates across windows = consistent = high quality.
+        Returns a score in [0, 1] where 1 = perfectly consistent.
+        """
+        std = np.std(bpm_per_window)
+        # Map std to [0,1] — a std of 0 BPM = perfect, 20+ BPM = useless
+        return float(np.exp(-std / 10.0))
+
+    def autocorrelation_sqi(signal, fps, minHz=0.75, maxHz=2.5):
+        """
+        Peak autocorrelation at the expected HR lag.
+        Strong autocorrelation peak = regular periodic signal = high quality.
+        """
+        signal = signal - np.mean(signal)
+        # Full autocorrelation
+        corr = np.correlate(signal, signal, mode='full')
+        corr = corr[len(corr) // 2:]  # keep positive lags only
+        corr = corr / (corr[0] + 1e-9)  # normalise to [−1, 1]
+
+        # Expected lag range for physiological HR
+        lag_min = int(fps / maxHz)  # shortest period
+        lag_max = int(fps / minHz)  # longest period
+
+        if lag_max >= len(corr):
+            return 0.0
+
+        # Peak within the physiological lag range
+        peak = np.max(corr[lag_min:lag_max])
+        return float(np.clip(peak, 0, 1))
+
+    def cross_roi_agreement_sqi(bpm_estimates, roi_idx, bandwidth=5.0):
+        """
+        Fraction of other ROIs within bandwidth BPM of this ROI's estimate.
+        High agreement = this ROI is with the consensus = higher quality.
+
+        bpm_estimates: array [num_rois] of per-window BPM estimates
+        roi_idx: index of the ROI being scored
+        bandwidth: BPM tolerance for agreement
+        """
+        own_bpm = bpm_estimates[roi_idx]
+        others = np.delete(bpm_estimates, roi_idx)
+        agreement = np.mean(np.abs(others - own_bpm) <= bandwidth)
+        return float(agreement)
+
+    def combined_sqi(snr_db, freq_consistency, autocorr, cross_agreement,
+                     w=(0.35, 0.25, 0.20, 0.20)):
+        """
+        Weighted combination of four SQI components.
+        All inputs should be normalised to [0, 1] before calling.
+        Returns combined SQI in [0, 1].
+        """
+        # Normalise SNR from dB to [0,1]
+        # Typical range: -5 dB (noise) to +15 dB (clean)
+        snr_norm = float(np.clip((snr_db + 5) / 20.0, 0, 1))
+
+        sqi = (w[0] * snr_norm
+               + w[1] * freq_consistency
+               + w[2] * autocorr
+               + w[3] * cross_agreement)
+
+        return float(np.clip(sqi, 0, 1))
+
+# ── SQI helpers (module-level, not class methods) ─────────────────────────────
+
+def frequency_consistency_sqi(bpm_per_window: np.ndarray) -> float:
+    """Low std of BPM estimates across windows = consistent = high quality."""
+    if len(bpm_per_window) < 2:
+        return 1.0
+    std = np.std(bpm_per_window)
+    return float(np.exp(-std / 10.0))
+
+def autocorrelation_sqi(signal: np.ndarray, fps: float,
+                        minHz: float = 0.75, maxHz: float = 2.5) -> float:
+    """Peak autocorrelation at expected HR lag = periodic signal = high quality."""
+    signal = signal - np.mean(signal)
+    corr = np.correlate(signal, signal, mode='full')
+    corr = corr[len(corr) // 2:]
+    corr = corr / (corr[0] + 1e-9)
+    lag_min = int(fps / maxHz)
+    lag_max = int(fps / minHz)
+    if lag_max >= len(corr) or lag_min >= lag_max:
+        return 0.0
+    return float(np.clip(np.max(corr[lag_min:lag_max]), 0, 1))
+
+def cross_roi_agreement_sqi(bpm_estimates: np.ndarray,
+                            roi_idx: int,
+                            bandwidth: float = 5.0) -> float:
+    """Fraction of other ROIs within bandwidth BPM of this ROI's estimate."""
+    own_bpm = bpm_estimates[roi_idx]
+    others = np.delete(bpm_estimates, roi_idx)
+    if len(others) == 0:
+        return 1.0
+    return float(np.mean(np.abs(others - own_bpm) <= bandwidth))
+
+def combined_sqi(snr_db: float, freq_consistency: float,
+                 autocorr: float, cross_agreement: float,
+                 w: tuple = (0.35, 0.25, 0.20, 0.20)) -> float:
+    """Weighted combination of four SQI components. Returns score in [0, 1]."""
+    snr_norm = float(np.clip((snr_db + 5) / 20.0, 0, 1))
+    sqi = (w[0] * snr_norm
+           + w[1] * freq_consistency
+           + w[2] * autocorr
+           + w[3] * cross_agreement)
+    return float(np.clip(sqi, 0, 1))
+
 # Transform BVP signals into HR values.
 def BVP_to_BPM(bvps, fps, minHz=0.65, maxHz=4.):
     """
@@ -318,7 +424,7 @@ def cpu_POS(signal, **kargs):
     eps = 10**-9
     X = signal
     e, c, f = X.shape            # e = #estimators, c = 3 rgb ch., f = #frames
-    w = int(1.6 * kargs['fps'])   # window length
+    w = int(6 * kargs['fps'])   # window length
 
     # stack e times fixed mat P
     P = np.array([[0, 1, -1], [-2, 1, 1]])

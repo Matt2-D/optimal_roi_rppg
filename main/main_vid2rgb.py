@@ -40,75 +40,74 @@ def main_vid2rgb(name_dataset):
     Params = util_analysis.Params(dir_option=dir_option, name_dataset=name_dataset)
 
     if name_dataset == 'custom':
-        attendant_id = 1
-        distances = [1, 2, 3, 4, 5]
+        list_attendant = [1,2]
+        distances = [1, 2] #, 3, 4, 5]
 
         df_nan = pd.DataFrame(columns=['attendant', 'distance', 'num_nan'])
 
         #os.listdir(frame_folder)
-        for dist in distances:
-            # Path to distance folder
-            dist_folder = os.path.join(
-                Params.dir_dataset,
-                f'attendant{attendant_id}',
-                str(dist)
-            )
-            raw_folder     = os.path.join(dist_folder, "raw")
-            cropped_folder = os.path.join(dist_folder, "cropped")
+        for attendant_id in list_attendant:
+            for dist in distances:
+                # Path to distance folder
+                dist_folder = os.path.join(
+                    Params.dir_dataset,
+                    f'attendant{attendant_id}',
+                    str(dist)
+                )
+                raw_folder     = os.path.join(dist_folder, "raw")
+                cropped_folder = os.path.join(dist_folder, "cropped")
 
 
-            # Validate raw frames exist
-            if not os.path.isdir(raw_folder):
-                raise FileNotFoundError(
-                    f"Expected raw frames at: {raw_folder}\n"
+                # Validate raw frames exist
+                if not os.path.isdir(raw_folder):
+                    raise FileNotFoundError(
+                        f"Expected raw frames at: {raw_folder}\n"
+                    )
+
+                # CropSense
+                #crop_stats = run_cropsense(input_dir=raw_folder,
+                    output_dir=cropped_folder,
+                    croptype="face",  # change to "upperbody"/"fullbody" if needed
+                    top_margin=0.2,
+                    bottom_margin=0.2,
+                    parallel=False  # set to True to use multiprocessing)
+                # Find the folder that contains PNG frames
+                png_parent = None
+                for item in os.listdir(dist_folder):
+                    full = os.path.join(dist_folder, item)
+                    if os.path.isdir(full) and item.startswith(f'attendant{attendant_id}-'):
+                        png_parent = full
+                        break
+
+                #if crop_stats["faces_detected"] == 0:
+                    #print(f"[Pipeline] WARNING: No faces detected for dist={dist}. Skipping.")
+                    #continue
+
+
+
+                # Extract RGB signal
+                Params.fps = 50
+                df_rgb, num_nan = util_analysis.frames_to_sig_stable(
+                    frame_folder=cropped_folder,
+                    Params=Params
                 )
 
-            # CropSense
-            crop_stats = run_cropsense(input_dir=raw_folder,
-                output_dir=cropped_folder,
-                croptype="face",  # change to "upperbody"/"fullbody" if needed
-                top_margin=0.2,
-                bottom_margin=0.2,
-                parallel=False,  # set to True to use multiprocessing
-            )
+                # Save RGB signals
+                save_dir = os.path.join(dir_crt, "data", name_dataset, "rgb")
+                os.makedirs(save_dir,exist_ok=True) #make sure the directory exists
 
-            # Find the folder that contains PNG frames
-            png_parent = None
-            for item in os.listdir(dist_folder):
-                full = os.path.join(dist_folder, item)
-                if os.path.isdir(full) and item.startswith(f'attendant{attendant_id}-'):
-                    png_parent = full
-                    break
+                save_path = os.path.join(
+                    dir_crt, 'data', name_dataset, 'rgb', f'{attendant_id}_{dist}.csv'
+                )
+                df_rgb.to_csv(save_path, index=False)
+                print("[Pipeline] RGB saved in,", save_path)
 
-            if crop_stats["faces_detected"] == 0:
-                print(f"[Pipeline] WARNING: No faces detected for dist={dist}. Skipping.")
-                continue
+                # Save NaN events
+                df_nan.loc[len(df_nan)] = [attendant_id, dist, num_nan]
 
-
-
-            # Extract RGB signal
-            Params.fps = 50
-            df_rgb, num_nan = util_analysis.frames_to_sig_stable(
-                frame_folder=cropped_folder,
-                Params=Params
-            )
-
-            # Save RGB signals
-            save_dir = os.path.join(dir_crt, "data", name_dataset, "rgb")
-            os.makedirs(save_dir,exist_ok=True) #make sure the directory exists
-
-            save_path = os.path.join(
-                dir_crt, 'data', name_dataset, 'rgb', f'{dist}.csv'
-            )
-            df_rgb.to_csv(save_path, index=False)
-            print("[Pipeline] RGB saved in,", save_path)
-
-            # Save NaN events
-            df_nan.loc[len(df_nan)] = [attendant_id, dist, num_nan]
-
-        # Save NaN summary
-        nan_path = os.path.join(dir_crt, 'data', name_dataset, 'rgb', 'nan_event.csv')
-        df_nan.to_csv(nan_path, index=False)
+            # Save NaN summary
+            nan_path = os.path.join(dir_crt, 'data', name_dataset, 'rgb', 'nan_event.csv')
+            df_nan.to_csv(nan_path, index=False)
     # Video -> RGB signal.
     elif name_dataset == '!UBFC-rPPG':
         # Sequnce num of attendants.

@@ -25,8 +25,8 @@ RUN_EVALUATION  = True
 
 NAME_DATASET  = 'custom'
 ALGORITHMS    = ['CHROM', 'LGI', 'OMIT', 'POS']
-ATTENDANT_ID  = 1
-DISTANCES     = [1, 2, 3, 4, 5]
+ATTENDANT_ID  = [1,2]
+DISTANCES     = [1, 2]#, 3, 4, 5]
 FPS           = 50.0
 
 
@@ -50,23 +50,20 @@ def stage_vid2rgb():
     from main_vid2rgb import main_vid2rgb
     main_vid2rgb(name_dataset=NAME_DATASET)
 
-
-def stage_weighted_roi():
-    from main_weightedROI import main_combine_rois
-    main_combine_rois(
-        name_dataset=NAME_DATASET,
-        attendant_id=ATTENDANT_ID,
-        distances=DISTANCES,
-        fps=FPS,
-    )
-
-
 def stage_rgb2hr():
     from main_rgb2hr import main_rgb2hr
     for algorithm in ALGORITHMS:
         print(f"\n  Algorithm: {algorithm}")
         main_rgb2hr(name_dataset=NAME_DATASET, algorithm=algorithm)
 
+def stage_weighted_roi():
+    from main_weightedROI import main_combine_rois
+    main_combine_rois(
+        name_dataset=NAME_DATASET,
+        list_attendant=ATTENDANT_ID,
+        distances=DISTANCES,
+        fps=FPS,
+    )
 
 def stage_gen_gthr():
     from main_gen_gtHR import main_gen_gtHR
@@ -86,7 +83,7 @@ if __name__ == "__main__":
     print(f"  rPPG PIPELINE  —  dataset: {NAME_DATASET}")
     print(f"  Algorithms : {ALGORITHMS}")
     print(f"  Distances  : {DISTANCES}")
-    print(f"  Attendant  : {ATTENDANT_ID}")
+    print(f"  Attendants  : {ATTENDANT_ID}")
     print(f"{'='*60}")
 
     pipeline_start = time.time()

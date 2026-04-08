@@ -65,13 +65,14 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
     # Groundtruth class initialization.
     GT = util_analysis.GroundTruth(dir_dataset=Params.dir_dataset, name_dataset=name_dataset)
     # Structures for different datasets.
-    if name_dataset == "custom": #custom dataset
-        list_attendant = [1]
-        distances = [1, 2, 3, 4, 5]
+    if name_dataset == "custom":
+        list_attendant = [1, 2]
+        distances = [1, 2]#, 3, 4, 5]
 
         df_eval = pd.DataFrame(
             columns=['attendant', 'distance', 'ROI',
-                     'DTW', 'PCC', 'CCC', 'RMSE', 'MAE', 'MAPE']
+                     'PCC', 'CCC', 'RMSE', 'MAE', 'MAPE',
+                     'SNR_mean', 'FC_mean', 'AC_mean', 'CRA_mean', 'SQI_mean']
         )
 
         for num_attendant in list_attendant:
@@ -81,44 +82,72 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
                       f"attendant{num_attendant} | dist{dist}")
                 print(f"{'=' * 60}")
 
-                # Load HR CSV
                 dir_hr = os.path.join(
                     dir_crt, 'data', name_dataset, 'hr',
-                    f'{dist}_{algorithm}1.csv'
+                    f'{num_attendant}_{dist}{algorithm}1.csv'
                 )
                 if not os.path.isfile(dir_hr):
                     print(f"  [WARN] HR CSV not found, skipping: {dir_hr}")
                     continue
 
-                # index_col=False preserves all columns including 'frame'
+                # Load and clean
                 df_hr = pd.read_csv(dir_hr, index_col=False)
+                df_hr = df_hr.loc[:, ~df_hr.columns.str.startswith('Unnamed')]
+                df_hr = df_hr.dropna(subset=['ROI'])
+                df_hr = df_hr.sort_values(['ROI', 'frame']).reset_index(drop=True)
 
-                # ── Derive ROI list from CSV (picks up ROIs 29 & 30) ─────────
+                # Verify frame counts per ROI
+                roi_frame_counts = df_hr.groupby('ROI')['frame'].nunique()
+                expected_frames = roi_frame_counts.max()
+                inconsistent = roi_frame_counts[roi_frame_counts != expected_frames]
+                if len(inconsistent) > 0:
+                    print(f"  [WARN] Inconsistent frame counts: {inconsistent.to_dict()}")
+
+                num_frames = int(expected_frames)
                 roi_names = list(df_hr['ROI'].unique())
                 num_rois = len(roi_names)
-                num_frames = df_hr['frame'].nunique()
-
                 print(f"  ROIs found: {num_rois}  |  Frames: {num_frames}")
 
                 # Load ground truth
                 gtBVP, gtBPM = load_gt(dir_crt, num_attendant, dist, num_frames)
 
-                #Build BVP / BPM arrays [frames x ROIs]
+                # Detect available SQI columns
+                has_snr = 'SNR' in df_hr.columns
+                has_fc = 'FC_SQI' in df_hr.columns
+                has_ac = 'AC_SQI' in df_hr.columns
+                has_cra = 'CRA_SQI' in df_hr.columns
+                has_sqi = 'SQI' in df_hr.columns
+
+                # Build arrays — one pass over ROIs
                 sig_bvp = np.zeros([num_frames, num_rois])
                 sig_bpm = np.zeros([num_frames, num_rois])
+                snr_mean = np.full(num_rois, np.nan)
+                fc_mean = np.full(num_rois, np.nan)
+                ac_mean = np.full(num_rois, np.nan)
+                cra_mean = np.full(num_rois, np.nan)
+                sqi_mean = np.full(num_rois, np.nan)
 
                 for i_roi, roi_name in enumerate(roi_names):
-                    mask = df_hr['ROI'].values == roi_name
-                    bvp_vals = df_hr.loc[mask, 'BVP'].values
-                    bpm_vals = df_hr.loc[mask, 'BPM'].values
+                    roi_subset = df_hr[df_hr['ROI'] == roi_name].sort_values('frame')
 
-                    # Guard against length mismatch
+                    def _mean(col):
+                        return float(np.nanmean(
+                            pd.to_numeric(roi_subset[col], errors='coerce').values
+                        ))
+
+                    bvp_vals = roi_subset['BVP'].values
+                    bpm_vals = roi_subset['BPM'].values
                     n = min(num_frames, len(bvp_vals))
                     sig_bvp[:n, i_roi] = bvp_vals[:n]
                     sig_bpm[:n, i_roi] = bpm_vals[:n]
 
-                # Metrics per ROI
-                # Pass roi_names so eval_pipe can label rows correctly
+                    if has_snr: snr_mean[i_roi] = _mean('SNR')
+                    if has_fc:  fc_mean[i_roi] = _mean('FC_SQI')
+                    if has_ac:  ac_mean[i_roi] = _mean('AC_SQI')
+                    if has_cra: cra_mean[i_roi] = _mean('CRA_SQI')
+                    if has_sqi: sqi_mean[i_roi] = _mean('SQI')
+
+                # Compute accuracy metrics
                 df_metric = util_analysis.eval_pipe(
                     sig_bvp, sig_bpm,
                     gtBVP, gtBPM,
@@ -126,8 +155,15 @@ def main_eval(name_dataset='custom', algorithm='CHROM'):
                     roi_names=roi_names
                 )
 
+                # Attach SQI means — after eval_pipe, outside the ROI loop
+                df_metric['SNR_mean'] = snr_mean
+                df_metric['FC_mean'] = fc_mean
+                df_metric['AC_mean'] = ac_mean
+                df_metric['CRA_mean'] = cra_mean
+                df_metric['SQI_mean'] = sqi_mean
                 df_metric['attendant'] = num_attendant
                 df_metric['distance'] = dist
+
                 df_eval = pd.concat([df_eval, df_metric], ignore_index=True)
 
         # Save results

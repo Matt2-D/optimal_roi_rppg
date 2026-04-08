@@ -42,45 +42,89 @@ def main_rgb2hr(name_dataset, algorithm):
     # RGB signal -> bvp signal.
     if name_dataset == 'custom':
         # Sequence num of attendants.
-        attendant_id = 1
-        distances = [1, 2, 3, 4, 5]
+        list_attendant = [1,2]
+        distances = [1, 2]  # , 3, 4, 5]
         # Loop over all attendants.
-        for dist in distances:
-            # Parse the RGB signal from the RGB dataframe. Size = [num_frames, num_ROI, rgb_channels(3)].
-            dir_sig_rgb = os.path.join(dir_crt, 'data', name_dataset, 'rgb', str(dist) + '.csv')
-            df_rgb = pd.read_csv(dir_sig_rgb)
-            #ROI list from CSV
-            roi_names = list(df_rgb['ROI'].unique())
-            num_rois = len(roi_names)
-            num_frames = df_rgb['frame'].max()
-            # RGB signal initialization.
-            sig_rgb = np.zeros([num_frames,num_rois, 3])
-            # Loop over all ROIs.
-            for i_roi, roi_name in enumerate(roi_names):
-                mask = df_rgb['ROI'].values == roi_name
-                sig_rgb[:, i_roi, 0] = df_rgb.loc[mask, 'R'].values  # Red channel.
-                sig_rgb[:, i_roi, 1] = df_rgb.loc[mask, 'G'].values  # Green channel.
-                sig_rgb[:, i_roi, 2] = df_rgb.loc[mask, 'B'].values  # Blue channel.
+        for attendant in list_attendant:
+            for dist in distances:
+                dir_sig_rgb = os.path.join(dir_crt, 'data', name_dataset, 'rgb', f'{attendant}_{dist}.csv')
 
-            # RGB video information.
+                if not os.path.isfile(dir_sig_rgb):
+                    print(f"  [SKIP] RGB CSV not found for attendant = {attendant}, dist={dist}: {dir_sig_rgb}")
+                    continue
 
-            # Get video fps.
-            Params.fps = 50   # or whatever your dataset uses
-            # RGB signal -> bvp signal & bpm signal.
-            sig_bvp, sig_bpm, sig_snr = util_analysis.rppg_hr_pipe(sig_rgb=sig_rgb, method=algorithm, Params=Params)
-            # Create the dataframe to save the HR-related data (bvp signal & bpm signal).
-            df_hr = pd.DataFrame(columns=['frame', 'time', 'ROI', 'BVP', 'BPM', 'SNR'], index=list(range(len(df_rgb))))
-            df_hr.loc[:, ['frame', 'time', 'ROI']] = df_rgb.loc[:, ['frame', 'time', 'ROI']]
-            # Loop over all ROIs.
-            for i_roi, roi_name in enumerate(roi_names):
-                mask=df_hr['ROI'].values == roi_name
-                df_hr.loc[mask, 'BVP'] = sig_bvp[:, i_roi]  # BVP signal.
-                df_hr.loc[mask, 'BPM'] = sig_bpm[:, i_roi]  # BPM signal.
-                df_hr.loc[mask, 'SNR'] = sig_snr[:, i_roi]  # SNR score.
-            # Data saving.
-            dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'hr',
-                                         str(dist) + '_' + algorithm + '1.csv')
-            df_hr.to_csv(dir_save_data, index=False)
+                df_rgb = pd.read_csv(dir_sig_rgb)
+
+                # Diagnostic
+                print(f"dist={dist} | shape={df_rgb.shape} | frame dtype={df_rgb['frame'].dtype} | "
+                      f"frame NaNs={df_rgb['frame'].isna().sum()} | ROIs={df_rgb['ROI'].nunique()}")
+
+                df_rgb['frame'] = pd.to_numeric(df_rgb['frame'], errors='coerce')
+                df_rgb = df_rgb.dropna(subset=['frame'])
+
+                if df_rgb.empty:
+                    print(f"  [SKIP] No valid frames after cleaning for dist={dist}")
+                    continue
+
+                df_rgb['frame'] = df_rgb['frame'].astype(int)
+                num_frames = int(df_rgb['frame'].max())
+                # ... rest of loop unchanged
+                #ROI list from CSV
+                roi_names = list(df_rgb['ROI'].unique())
+                num_rois = len(roi_names)
+                # Clean the frame column
+                df_rgb['frame'] = pd.to_numeric(df_rgb['frame'], errors='coerce')
+
+                # Drop rows where frame is NaN
+                df_rgb = df_rgb.dropna(subset=['frame'])
+
+                # Convert to int
+                df_rgb['frame'] = df_rgb['frame'].astype(int)
+
+                # Now safe to compute max
+                df_rgb['frame'] = pd.to_numeric(df_rgb['frame'], errors='coerce')
+                df_rgb = df_rgb.dropna(subset=['frame'])
+                df_rgb['frame'] = df_rgb['frame'].astype(int)
+                #num_frames = int(df_rgb['frame'].max())  # must be after cleaning, and cast to int
+                # RGB signal initialization.
+                sig_rgb = np.zeros([num_frames,num_rois, 3])
+                # Loop over all ROIs.
+                for i_roi, roi_name in enumerate(roi_names):
+                    mask = df_rgb['ROI'].values == roi_name
+                    sig_rgb[:, i_roi, 0] = df_rgb.loc[mask, 'R'].values  # Red channel.
+                    sig_rgb[:, i_roi, 1] = df_rgb.loc[mask, 'G'].values  # Green channel.
+                    sig_rgb[:, i_roi, 2] = df_rgb.loc[mask, 'B'].values  # Blue channel.
+
+                # RGB video information.
+
+                # Get video fps.
+                Params.fps = 50   # or whatever your dataset uses
+                # RGB signal -> bvp signal & bpm signal.
+                # Update unpack
+                sig_bvp, sig_bpm, sig_snr, sig_fc, sig_ac, sig_cra, sig_sqi = \
+                    util_analysis.rppg_hr_pipe(sig_rgb=sig_rgb, method=algorithm, Params=Params)
+
+                # Update DataFrame columns
+                df_hr = pd.DataFrame(
+                    columns=['frame', 'time', 'ROI', 'BVP', 'BPM', 'SNR', 'FC_SQI', 'AC_SQI', 'CRA_SQI', 'SQI'],
+                    index=list(range(len(df_rgb)))
+                )
+                df_hr.loc[:, ['frame', 'time', 'ROI']] = df_rgb.loc[:, ['frame', 'time', 'ROI']].values
+
+                for i_roi, roi_name in enumerate(roi_names):
+                    mask = df_hr['ROI'].values == roi_name
+                    df_hr.loc[mask, 'BVP'] = sig_bvp[:, i_roi]
+                    df_hr.loc[mask, 'BPM'] = sig_bpm[:, i_roi]
+                    df_hr.loc[mask, 'SNR'] = sig_snr[:, i_roi]
+                    df_hr.loc[mask, 'FC_SQI'] = sig_fc[:, i_roi]
+                    df_hr.loc[mask, 'AC_SQI'] = sig_ac[:, i_roi]
+                    df_hr.loc[mask, 'CRA_SQI'] = sig_cra[:, i_roi]
+                    df_hr.loc[mask, 'SQI'] = sig_sqi[:, i_roi]
+
+                # Data saving.
+                dir_save_data = os.path.join(dir_crt, 'data', name_dataset, 'hr',
+                                             str(attendant) + '_' + str(dist) + algorithm + '1.csv')
+                df_hr.to_csv(dir_save_data, index=False)
 
     if name_dataset == '!UBFC-rPPG':
         # Sequence num of attendants.

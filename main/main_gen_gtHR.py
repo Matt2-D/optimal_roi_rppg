@@ -47,16 +47,21 @@ def align_to_frames(signal: np.ndarray, target_len: int) -> np.ndarray:
     tgt_idx = np.linspace(0, 1, target_len)
     return interp1d(src_idx, signal, kind='linear')(tgt_idx)
 
-def get_num_frames(dir_crt: str, name_dataset: str, dist: int) -> int:
-    rgb_csv = os.path.join(dir_crt, 'data', name_dataset, 'rgb', f'{dist}.csv')
+def get_num_frames(dir_crt: str,name_dataset: str, attendant: int, dist: int) -> int:
+    rgb_csv = os.path.join(dir_crt, 'data', name_dataset, 'rgb', f'{attendant}_{dist}.csv')
     if not os.path.isfile(rgb_csv):
         raise FileNotFoundError(
             f"RGB CSV not found: {rgb_csv}\n"
             "Run main_vid2rgb.py before main_gen_gtHR.py."
         )
-    # Read only the frame column — fast even for large files
     df = pd.read_csv(rgb_csv, usecols=['frame'])
-    return int(df['frame'].max())
+    max_frame = df['frame'].max()
+    if pd.isna(max_frame):
+        raise FileNotFoundError(
+            f"RGB CSV exists but 'frame' column is empty or all-NaN: {rgb_csv}\n"
+            "The vid2rgb stage may not have completed for this distance."
+        )
+    return int(max_frame)
 
 def main_gen_gtHR(dir_dataset: str,name_dataset: str = 'custom') -> None:
     """
@@ -68,8 +73,8 @@ def main_gen_gtHR(dir_dataset: str,name_dataset: str = 'custom') -> None:
                   (e.g. data/custom  — attendant folders live inside)
     """
 
-    list_attendant = [1]
-    distances      = [1, 2, 3, 4, 5]
+    list_attendant = [1,2]
+    distances = [1, 2]  # , 3, 4, 5]
 
     # Output directory
     dir_out = os.path.join(os.getcwd(), 'data', 'custom', 'gtHR')
@@ -78,7 +83,7 @@ def main_gen_gtHR(dir_dataset: str,name_dataset: str = 'custom') -> None:
     for num_attendant in tqdm(list_attendant, desc="Attendants"):
         for dist in tqdm(distances, desc=f"  Distances (att{num_attendant})", leave=False):
             try:
-                num_frames = get_num_frames(os.getcwd(), name_dataset, dist)
+                num_frames = get_num_frames(os.getcwd(), name_dataset, num_attendant, dist)
                 print(f"\n  dist={dist} → {num_frames} frames (from RGB CSV)")
             except FileNotFoundError as e:
                 print(f"  [WARN] {e} — skipping dist={dist}")

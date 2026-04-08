@@ -6,7 +6,7 @@ Utils for the analysis of the optimal ROI selection under different conditions.
 # Date: 2023/08/05
 # Editor: Matthew Dowell
 # Date: 03/10/2026
-
+from scipy.signal import savgol_filter
 import warnings
 warnings.filterwarnings("ignore")  # Ignore unnecessary warnings.
 import os
@@ -21,6 +21,7 @@ from xml.dom import minidom
 from sklearn import metrics
 from dtaidistance import dtw
 from scipy.signal import resample
+from scipy.ndimage import uniform_filter1d
 
 
 class Params():
@@ -833,33 +834,91 @@ def rppg_hr_pipe(sig_rgb, method, Params):
         axis=1
     )
 
-    # --- 5. Compute BPM + SNR per window AND per ROI ---
+    # --- 5. Compute BPM + SNR + SQI per window AND per ROI ---
     num_windows = len(sig_bvp_win_filtered)
     num_rois = sig_bvp_win_filtered[0].shape[0]
 
     multi_sig_bpm = np.zeros((num_windows, num_rois))
     multi_sig_snr = np.zeros((num_windows, num_rois))
+    multi_sig_ac = np.zeros((num_windows, num_rois))  # autocorrelation SQI
+    multi_sig_fc = np.zeros((num_windows, num_rois))  # frequency consistency SQI
+    multi_sig_sqi = np.zeros((num_windows, num_rois))  # combined SQI
 
-    for w, win in enumerate(sig_bvp_win_filtered):
+    for w, win_data in enumerate(sig_bvp_win_filtered):
+        window_bpm_estimates = np.zeros(num_rois)
+
         for r in range(num_rois):
-            roi_signal = win[r, :].astype(np.float32)
+            roi_signal = win_data[r, :].astype(np.float64)
 
             bpm_obj = util_pyVHR.BPM(
-                data=roi_signal,
+                data=roi_signal.astype(np.float32),
                 fps=Params.fps,
-                minHz=0.65,
-                maxHz=4.0
+                minHz=0.75,
+                maxHz=2.0
+            )
+            bpm_val = bpm_obj.BVP_to_BPM()
+            snr_val = bpm_obj.compute_snr()
+
+            ac_sqi = util_pyVHR.autocorrelation_sqi(roi_signal, Params.fps)
+            fc_sqi = util_pyVHR.frequency_consistency_sqi(
+                multi_sig_bpm[:w, r] if w > 0 else np.array([bpm_val])
             )
 
-            bpm_val = bpm_obj.BVP_to_BPM()  # already in BPM
-            snr_val = bpm_obj.compute_snr()#compute_snr_hr(bpm_val)
-
+            window_bpm_estimates[r] = bpm_val
             multi_sig_bpm[w, r] = bpm_val
             multi_sig_snr[w, r] = snr_val
+            multi_sig_ac[w, r] = ac_sqi
+            multi_sig_fc[w, r] = fc_sqi
 
-    #multi_sig_bpm = np.array(multi_sig_bpm)  # shape: [num_windows, num_estimators]
-    #multi_sig_snr = np.array(multi_sig_snr)  # shape: [num_windows]
+        # Cross-ROI agreement needs all ROIs' BPM for this window
+        for r in range(num_rois):
+            multi_sig_sqi[w, r] = util_pyVHR.combined_sqi(
+                snr_db=multi_sig_snr[w, r],
+                freq_consistency=multi_sig_fc[w, r],
+                autocorr=multi_sig_ac[w, r],
+                cross_agreement=util_pyVHR.cross_roi_agreement_sqi(window_bpm_estimates, r)
+            )
 
+            ac_sqi = util_pyVHR.autocorrelation_sqi(roi_signal, Params.fps)
+            fc_sqi = util_pyVHR.frequency_consistency_sqi(multi_sig_bpm[:w + 1, r]
+                                               if w > 0 else np.array([bpm_val]))
+
+    # After existing array initializations, add:
+    multi_sig_fc = np.zeros((num_windows, num_rois))  # frequency consistency
+    multi_sig_ac = np.zeros((num_windows, num_rois))  # autocorrelation
+    multi_sig_cra = np.zeros((num_windows, num_rois))  # cross-ROI agreement
+    multi_sig_sqi = np.zeros((num_windows, num_rois))  # combined
+
+    # Inside the per-window per-ROI loop, store each component:
+    for w, win_data in enumerate(sig_bvp_win_filtered):
+        window_bpm_estimates = np.zeros(num_rois)
+        for r in range(num_rois):
+            roi_signal = win_data[r, :].astype(np.float64)
+            bpm_obj = util_pyVHR.BPM(
+                data=roi_signal.astype(np.float32),
+                fps=Params.fps, minHz=0.75, maxHz=2.0
+            )
+            bpm_val = bpm_obj.BVP_to_BPM()
+            snr_val = bpm_obj.compute_snr()
+            ac_val = util_pyVHR.autocorrelation_sqi(roi_signal, Params.fps)
+            fc_val = util_pyVHR.frequency_consistency_sqi(
+                multi_sig_bpm[:w, r] if w > 0 else np.array([bpm_val])
+            )
+            window_bpm_estimates[r] = bpm_val
+            multi_sig_bpm[w, r] = bpm_val
+            multi_sig_snr[w, r] = snr_val
+            multi_sig_ac[w, r] = ac_val
+            multi_sig_fc[w, r] = fc_val
+
+        for r in range(num_rois):
+            cra_val = util_pyVHR.cross_roi_agreement_sqi(window_bpm_estimates, r)
+            multi_sig_cra[w, r] = cra_val
+            multi_sig_sqi[w, r] = util_pyVHR.combined_sqi(
+                snr_db=float(10 * np.log10(multi_sig_snr[w, r] + 1e-9)),
+                freq_consistency=multi_sig_fc[w, r],
+                autocorr=multi_sig_ac[w, r],
+                cross_agreement=cra_val
+            )
     # Replace NaN BPM windows
     for i in range(len(multi_sig_bpm)):
         if np.any(np.isnan(multi_sig_bpm[i])):
@@ -867,6 +926,17 @@ def rppg_hr_pipe(sig_rgb, method, Params):
                 multi_sig_bpm[i] = np.zeros_like(multi_sig_bpm[i])
             else:
                 multi_sig_bpm[i] = multi_sig_bpm[i - 1]
+
+    from scipy.signal import savgol_filter
+
+    # After computing multi_sig_bpm [num_windows, num_rois]:
+    # Smooth window-level BPM before interpolating to frames
+    for r in range(num_rois):
+        window_len = min(11, num_windows if num_windows % 2 == 1 else num_windows - 1)
+        if window_len >= 3:
+            multi_sig_bpm[:, r] = savgol_filter(
+                multi_sig_bpm[:, r], window_length=window_len, polyorder=2
+            )
 
     # --- 6. Interpolate BPM + SNR back to frame-level ---
     sig_bvp_old = sig_bvp.T  # [num_frames, num_ROI]
@@ -898,7 +968,37 @@ def rppg_hr_pipe(sig_rgb, method, Params):
             fp=multi_sig_snr[:, i_roi]
         )
 
-    return sig_bvp, sig_bpm, sig_snr
+    # Add after existing sig_snr interpolation block:
+    sig_fc = np.zeros_like(sig_rgb[:, :, 0])
+    sig_ac = np.zeros_like(sig_rgb[:, :, 0])
+    sig_cra = np.zeros_like(sig_rgb[:, :, 0])
+    sig_sqi = np.zeros_like(sig_rgb[:, :, 0])
+
+    for i_roi in range(sig_bpm_old.shape[0]):
+        # ... existing BVP, BPM, SNR interpolation unchanged ...
+
+        sig_fc[:, i_roi] = np.interp(
+            x=np.linspace(0, len(sig_fc), len(sig_fc)),
+            xp=np.linspace(0, num_windows, num_windows),
+            fp=multi_sig_fc[:, i_roi]
+        )
+        sig_ac[:, i_roi] = np.interp(
+            x=np.linspace(0, len(sig_ac), len(sig_ac)),
+            xp=np.linspace(0, num_windows, num_windows),
+            fp=multi_sig_ac[:, i_roi]
+        )
+        sig_cra[:, i_roi] = np.interp(
+            x=np.linspace(0, len(sig_cra), len(sig_cra)),
+            xp=np.linspace(0, num_windows, num_windows),
+            fp=multi_sig_cra[:, i_roi]
+        )
+        sig_sqi[:, i_roi] = np.interp(
+            x=np.linspace(0, len(sig_sqi), len(sig_sqi)),
+            xp=np.linspace(0, num_windows, num_windows),
+            fp=multi_sig_sqi[:, i_roi]
+        )
+
+    return sig_bvp, sig_bpm, sig_snr, sig_fc, sig_ac, sig_cra, sig_sqi
 
 
 def eval_pipe(sig_bvp, sig_bpm, gtTrace, gtHR, Params, roi_names=None):
@@ -962,10 +1062,30 @@ def eval_pipe(sig_bvp, sig_bpm, gtTrace, gtHR, Params, roi_names=None):
         list_MAE[i] = safe_mae(est, gt)
         list_MAPE[i] = safe_mape(est, gt)
 
+    for i in range(num_rois):
+        est = sig_bpm[:, i].astype(float)
+        gt = gtHR.astype(float)
+
+        N = min(len(est), len(gt))
+        est = est[:N]
+        gt = gt[:N]
+
+        # Smooth both signals to the same 5s resolution before error metrics
+        smooth_size = max(3, int(5 * Params.fps))
+        est_smooth = uniform_filter1d(est, size=smooth_size)
+        gt_smooth = uniform_filter1d(gt, size=smooth_size)
+
+        # PCC and CCC on smoothed signals
+        list_PCC[i] = np.corrcoef(est_smooth, gt_smooth)[0, 1]
+        list_CCC[i] = ccc(est_smooth, gt_smooth)
+
+        # Error metrics on smoothed signals
+        list_RMSE[i] = safe_rmse(est_smooth, gt_smooth)
+        list_MAE[i] = safe_mae(est_smooth, gt_smooth)
+        list_MAPE[i] = safe_mape(est_smooth, gt_smooth)
     # Build output DataFrame
     df_metric = pd.DataFrame({
         "ROI": roi_names,
-        "DTW": [np.nan] * num_rois,  # Not used for custom dataset
         "PCC": list_PCC,
         "CCC": list_CCC,
         "RMSE": list_RMSE,
