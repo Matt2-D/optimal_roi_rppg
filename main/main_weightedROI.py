@@ -267,15 +267,15 @@ def append_composite_rois(csv_path: str, fps: float,
     if missing_rois:
         raise ValueError(f"Target ROIs missing from CSV: {missing_rois}")
 
-    # Idempotency — remove any partial run before rebuilding
+    # Always remove any existing composite ROIs and rebuild from scratch
     composite_names = {ROI29_NAME, ROI30_NAME, ROI31_NAME,
                        ROI32_NAME, ROI33_NAME, ROI34_NAME, ROI35_NAME}
-    if composite_names.issubset(present):
-        print(f"  [SKIP] All composite ROIs already present in {csv_path}")
-        return
     if composite_names & present:
-        print(f"  [INFO] Partial composites found — removing and rebuilding.")
+        print(f"  [INFO] Removing existing composite ROIs — rebuilding.")
         df = df[~df["ROI"].isin(composite_names)].reset_index(drop=True)
+        # Update present and frames after removal
+        present = set(df["ROI"].unique())
+        frames = sorted(df["frame"].unique())
 
     # Backup
     stem = os.path.splitext(csv_path)[0]
