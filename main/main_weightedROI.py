@@ -37,6 +37,7 @@ ROI32_NAME = "ac_weighted_composite"
 ROI33_NAME = "fc_weighted_composite"
 ROI34_NAME = "cra_weighted_composite"
 ROI35_NAME = "full_frame_average"
+ROI36_NAME = "snr_weighted_all_rois"
 
 MIN_HZ = 0.7
 MAX_HZ = 2.5
@@ -245,6 +246,53 @@ def _full_frame_average(df: pd.DataFrame, frames: list,
                         "B":     float(rows["B"].mean())})
     return pd.DataFrame(records, columns=["frame", "time", "ROI", "R", "G", "B"])
 
+# SNR from Full frame average
+def _snr_weighted_all_rois(df: pd.DataFrame, frames: list,
+                            time_lookup: dict, fps: float) -> pd.DataFrame:
+    """
+    ROI 36 — SNR-weighted average across ALL 28 original ROIs per frame.
+    SNR is computed from the green channel of each ROI's full time series.
+    """
+    all_rois = [roi for roi in df["ROI"].unique()
+                if roi not in {ROI29_NAME, ROI30_NAME, ROI31_NAME,
+                               ROI32_NAME, ROI33_NAME, ROI34_NAME, ROI35_NAME}]
+
+    # Compute SNR for each ROI
+    snr_vals = {}
+    for roi in all_rois:
+        roi_df = df[df["ROI"] == roi].sort_values("frame").reset_index(drop=True)
+        snr_vals[roi] = _snr_db(roi_df, fps)
+
+    # Convert dB → [0,1] then normalise
+    rois_arr = list(snr_vals.keys())
+    snr_arr  = np.array([snr_vals[r] for r in rois_arr])
+    snr_01   = np.clip((snr_arr + 5) / 20.0, 0, 1)
+    weights  = normalise_weights(snr_01)
+
+    print(f"\n  ROI 36 SNR weights (all {len(rois_arr)} ROIs):")
+    for roi, w in zip(rois_arr, weights):
+        print(f"    {roi:35s}  {w:.4f}")
+
+    # Pre-index each ROI by frame for speed
+    roi_frames = {roi: df[df["ROI"] == roi].set_index("frame")
+                  for roi in rois_arr}
+
+    records = []
+    for frame in frames:
+        r = g = b = 0.0
+        for roi, w in zip(rois_arr, weights):
+            try:
+                row = roi_frames[roi].loc[frame]
+                r += w * float(row["R"])
+                g += w * float(row["G"])
+                b += w * float(row["B"])
+            except KeyError:
+                continue
+        records.append({"frame": frame,
+                        "time":  time_lookup.get(frame, np.nan),
+                        "ROI":   ROI36_NAME,
+                        "R": r, "G": g, "B": b})
+    return pd.DataFrame(records, columns=["frame", "time", "ROI", "R", "G", "B"])
 
 # Main per-file function
 
@@ -269,7 +317,7 @@ def append_composite_rois(csv_path: str, fps: float,
 
     # Always remove any existing composite ROIs and rebuild from scratch
     composite_names = {ROI29_NAME, ROI30_NAME, ROI31_NAME,
-                       ROI32_NAME, ROI33_NAME, ROI34_NAME, ROI35_NAME}
+                       ROI32_NAME, ROI33_NAME, ROI34_NAME, ROI35_NAME, ROI36_NAME}
     if composite_names & present:
         print(f"  [INFO] Removing existing composite ROIs — rebuilding.")
         df = df[~df["ROI"].isin(composite_names)].reset_index(drop=True)
@@ -316,17 +364,18 @@ def append_composite_rois(csv_path: str, fps: float,
     roi33_df = _weighted_composite(roi_data, w_fc,  frames, time_lookup, ROI33_NAME).reset_index(drop=True)
     roi34_df = _weighted_composite(roi_data, w_cra, frames, time_lookup, ROI34_NAME).reset_index(drop=True)
     roi35_df = _full_frame_average(df, frames, time_lookup).reset_index(drop=True)
+    roi36_df = _snr_weighted_all_rois(df, frames, time_lookup, fps).reset_index(drop=True)
 
     print()
     for name, rdf in [(ROI29_NAME, roi29_df), (ROI30_NAME, roi30_df),
                       (ROI31_NAME, roi31_df), (ROI32_NAME, roi32_df),
                       (ROI33_NAME, roi33_df), (ROI34_NAME, roi34_df),
-                      (ROI35_NAME, roi35_df)]:
+                      (ROI35_NAME, roi35_df),(ROI36_NAME, roi36_df)]:
         print(f"  {name}: {len(rdf)} frames")
 
     df_updated = pd.concat(
         [df, roi29_df, roi30_df, roi31_df, roi32_df,
-         roi33_df, roi34_df, roi35_df],
+         roi33_df, roi34_df, roi35_df, roi36_df],
         ignore_index=True
     )
     df_updated.to_csv(csv_path, index=False)
